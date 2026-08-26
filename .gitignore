@@ -1,9 +1,52 @@
+# Dependencies
 node_modules/
+.pnpm-store/
+.pnp.*
+
+# Build output and TypeScript caches
 dist/
+build/
+out/
+*.tsbuildinfo
+
+# Tests and coverage
 coverage/
+.vitest/
+
+# Tool caches
+.eslintcache
+.turbo/
+.vite/
+agents/
+agent/
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local environment files
 .env
-.DS_Store
-.vscode/
-.idea/
+.env.*
+!.env.example
+!.env.*.example
+
+# Packaged releases
 *.tgz
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.swp
+*~
+
+# Local certificates and keys
+*.pem
