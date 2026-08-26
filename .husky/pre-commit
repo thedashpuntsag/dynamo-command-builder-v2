@@ -1,5 +1,4 @@
-pnpm run format
-git add .
 pnpm run format:check
-pnpm run lint:fix
-pnpm run build
+pnpm run lint
+pnpm run typecheck
+pnpm run test

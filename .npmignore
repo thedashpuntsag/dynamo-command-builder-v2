@@ -1,5 +1,10 @@
+src/
+test/
 coverage/
-dist/
-node_modules/
 *.tgz
-.env
+.env*
+*.config.*
+tsconfig.json
+pnpm-*.yaml
+.husky/
+.github/
