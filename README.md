@@ -6,7 +6,7 @@ A type-safe command builder for the AWS SDK for JavaScript v3 DynamoDB clients.
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22.13 or newer for development (Node.js 20 remains supported for package consumers)
 - pnpm 11
 
 ## Development

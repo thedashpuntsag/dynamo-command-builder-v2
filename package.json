@@ -57,6 +57,12 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=22.13.0"
+    }
+  },
   "peerDependencies": {
     "@aws-sdk/client-dynamodb": "^3.1019.0",
     "@aws-sdk/lib-dynamodb": "^3.1019.0"
