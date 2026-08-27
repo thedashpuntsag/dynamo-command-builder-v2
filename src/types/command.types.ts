@@ -1,39 +1,11 @@
 import { z } from 'zod';
-import { optStringSch, requiredStringSch } from './utility';
-
-// ---------------------------------------------------------------------------------------------------------------------
-export const dynamoAttrTypeSch = z.enum(['S', 'N', 'B', 'BOOL', 'NULL', 'SS', 'NS', 'BS', 'M', 'L']);
-export type DynamoAttrType = z.infer<typeof dynamoAttrTypeSch>;
-
-export const dynamoKeyAttrTypeSch = z.enum(['S', 'N', 'B']);
-export type DynamoKeyAttrType = z.infer<typeof dynamoKeyAttrTypeSch>;
-
-export const dynamoSortOperatorSch = z.enum([
-  'EQUAL_TO',
-  'LESS_THAN',
-  'LESS_THAN_OR_EQUAL_TO',
-  'GREATER_THAN',
-  'GREATER_THAN_OR_EQUAL_TO',
-  'BETWEEN',
-  'BEGINS_WITH',
-]);
-export type DynamoSortOperator = z.infer<typeof dynamoSortOperatorSch>;
-
-export const dynamoFilterOperatorSch = z.enum([
-  'EQUAL_TO',
-  'NOT_EQUAL_TO',
-  'LESS_THAN',
-  'LESS_THAN_OR_EQUAL_TO',
-  'GREATER_THAN',
-  'GREATER_THAN_OR_EQUAL_TO',
-  'BETWEEN',
-  'BEGINS_WITH',
-  'CONTAINS',
-  'NOT_CONTAINS',
-  'EXISTS',
-  'NOT_EXISTS',
-]);
-export type DynamoFilterOperator = z.infer<typeof dynamoFilterOperatorSch>;
+import {
+  dynamoFilterOperatorSch,
+  dynamoKeyAttrTypeSch,
+  dynamoSortOperatorSch,
+  optStringSch,
+  requiredStringSch,
+} from './utility.types';
 
 // --------------------------------------- Dynamo fields schemas -------------------------------------------------------
 export const dynamoPartitionKeySch = z
@@ -162,7 +134,7 @@ export const dynamoScanRequestSch = z
   .strict();
 export type DynamoScanRequest = z.infer<typeof dynamoScanRequestSch>;
 /**
- *
+ * Validates the discriminated query or scan request and its cross-field rules.
  */
 export const dynamoReadRequestSch = z
   .discriminatedUnion('operation', [dynamoQueryRequestSch, dynamoScanRequestSch])
@@ -216,10 +188,11 @@ export const dynamoReadRequestSch = z
 export type DynamoReadRequest = z.infer<typeof dynamoReadRequestSch>;
 
 /**
+ * Validates that positioned values are continuous and start at position one.
  *
- * @param values
- * @param path
- * @param ctx
+ * @param values Positioned request values to validate.
+ * @param path Request field path used when reporting issues.
+ * @param ctx Zod refinement context that receives validation issues.
  */
 function validatePositions(values: Array<{ position: number }>, path: string, ctx: z.RefinementCtx): void {
   values.forEach((value, index) => {
@@ -234,45 +207,3 @@ function validatePositions(values: Array<{ position: number }>, path: string, ct
     }
   });
 }
-
-// ---------------------------------------------------------------------------------------------------------------------
-
-export const dynamoCommandQuerySch = z.object({
-  operation: z.enum(['query', 'scan']).default('query'),
-
-  // Query attributes
-  index: z.string().optional(),
-  pkAttr1Name: z.string(),
-  pkAttr1Value: z.string(),
-  pkAttr1ValueType: dynamoKeyAttrTypeSch.default('S'),
-  pkAttr2Name: z.string().optional(),
-  pkAttr2Value: z.string().optional(),
-  pkAttr2ValueType: dynamoKeyAttrTypeSch.optional(),
-  pkAttr3Name: z.string().optional(),
-  pkAttr3Value: z.string().optional(),
-  pkAttr3ValueType: dynamoKeyAttrTypeSch.optional(),
-  pkAttr4Name: z.string().optional(),
-  pkAttr4Value: z.string().optional(),
-  pkAttr4ValueType: dynamoKeyAttrTypeSch.optional(),
-  skAttr1Name: z.string().optional(),
-  skAttr1Value: z.string().optional(),
-  skAttr1ValueType: dynamoKeyAttrTypeSch.optional(),
-  skAttr2Name: z.string().optional(),
-  skAttr2Value: z.string().optional(),
-  skAttr2ValueType: dynamoKeyAttrTypeSch.optional(),
-  skAttr3Name: z.string().optional(),
-  skAttr3Value: z.string().optional(),
-  skAttr3ValueType: dynamoKeyAttrTypeSch.optional(),
-  skAttr4Name: z.string().optional(),
-  skAttr4Value: z.string().optional(),
-  skAttr4ValueType: dynamoKeyAttrTypeSch.optional(),
-
-  // Filter attributes
-
-  // Additional attributes can be added as needed
-  table: z.string().optional(),
-  tab: z.string().optional(),
-  region: z.string().optional(),
-});
-
-export type DynamoCommandQuery = z.infer<typeof dynamoCommandQuerySch>;
