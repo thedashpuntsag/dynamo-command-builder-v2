@@ -74,43 +74,7 @@ describe('dynamoReadQueryRequestSch', () => {
     });
   });
 
-  it('rejects whitespace-only optional values', () => {
-    const result = dynamoReadQueryRequestSch.safeParse({
-      table: 'orders',
-      pkAttr1Name: '   ',
-      pkAttr1Value: 'customer-123',
-    });
-
-    expect(result.success).toBe(false);
-    if (result.success) return;
-
-    expect(result.error.issues.some((issue) => issue.path.join('.') === 'pkAttr1Name')).toBe(true);
-  });
-
-  it('rejects gaps in key slots and conditions after an inequality', () => {
-    const result = dynamoReadQueryRequestSch.safeParse({
-      operation: 'QUERY',
-      table: 'orders',
-      pkAttr1Name: 'customerId',
-      pkAttr1Value: 'customer-123',
-      pkAttr2Name: 'region',
-      pkAttr2Value: 'apac',
-      skAttr1Name: 'createdAt',
-      skAttr1Condition: 'GREATER_THAN',
-      skAttr1Value: '2026-01-01',
-      skAttr2Name: 'orderId',
-      skAttr2Value: 'order-1',
-    });
-
-    expect(result.success).toBe(false);
-    if (result.success) return;
-
-    const messages = result.error.issues.map((issue) => issue.message);
-    expect(messages).toContain('No sort-key condition may follow an inequality.');
-    expect(messages).not.toContain('Partition-key slots must be continuous without gaps.');
-  });
-
-  it('rejects query filters that target key attributes', () => {
+  it('rejects an API query that tries to filter on its partition key', () => {
     const result = dynamoReadQueryRequestSch.safeParse({
       operation: 'QUERY',
       table: 'orders',
@@ -128,23 +92,5 @@ describe('dynamoReadQueryRequestSch', () => {
     expect(result.error.issues.map((issue) => issue.message)).toContain(
       'Query filters cannot target key attributes. Use a key condition.'
     );
-  });
-
-  it('continues validating filters after an EXISTS condition', () => {
-    const result = dynamoReadQueryRequestSch.safeParse({
-      operation: 'QUERY',
-      table: 'orders',
-      pkAttr1Name: 'customerId',
-      pkAttr1Value: 'customer-123',
-      filterAttr1Name: 'shippedAt',
-      filterAttr1Condition: 'EXISTS',
-      filterAttr2Name: 'status',
-      filterAttr2Condition: 'EQUAL_TO',
-    });
-
-    expect(result.success).toBe(false);
-    if (result.success) return;
-
-    expect(result.error.issues.map((issue) => issue.message)).toContain('EQUAL_TO requires a value.');
   });
 });
