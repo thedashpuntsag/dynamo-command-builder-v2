@@ -31,7 +31,7 @@ const stringBooleanSch = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
-const optionalIntegerSch = z.preprocess((value) => {
+const optIntSch = z.preprocess((value) => {
   if (value === '' || value === null || value === undefined) return undefined;
   if (typeof value === 'string' && !/^(0|[1-9]\d*)$/.test(value.trim())) return value;
   return typeof value === 'string' ? Number(value.trim()) : value;
@@ -92,7 +92,7 @@ const readOperationSch = z.preprocess(
   z.enum(['QUERY', 'SCAN'])
 );
 
-const sortingSch = z.preprocess(
+export const dynamoSortingSch = z.preprocess(
   (value) => {
     if (value === '' || value === null || value === undefined) {
       return undefined;
@@ -102,8 +102,9 @@ const sortingSch = z.preprocess(
   },
   z.enum(['ASC', 'DESC']).optional()
 );
+export type DynamoSorting = z.infer<typeof dynamoSortingSch>;
 
-// ---------------------------------------Single Query/Scan request schema  ----------------------------------------------------
+// ------------------------------ Single Query/Scan request schema  ----------------------------------------------------
 export const dynamoReadQueryRequestSch = z
   .preprocess(
     normalizeNullFilterValues,
@@ -193,12 +194,12 @@ export const dynamoReadQueryRequestSch = z
         filterAttr5Value2: optStringSch,
 
         // Read, pagination and Scan options
-        sorting: sortingSch,
-        limit: optionalIntegerSch.pipe(z.number().positive().optional()),
+        sorting: dynamoSortingSch,
+        limit: optIntSch.pipe(z.number().positive().optional()),
         consistentRead: stringBooleanSch.optional(),
         lastEvaluatedKey: lastEvaluatedKeySch,
-        segment: optionalIntegerSch.pipe(z.number().nonnegative().optional()),
-        totalSegments: optionalIntegerSch.pipe(z.number().positive().max(1_000_000).optional()),
+        segment: optIntSch.pipe(z.number().nonnegative().optional()),
+        totalSegments: optIntSch.pipe(z.number().positive().max(1_000_000).optional()),
         projectionExpression: optStringSch,
         expressionAttributeNames: z.record(z.string().min(1), z.string().min(1)).optional(),
         select: z.enum(['ALL_ATTRIBUTES', 'ALL_PROJECTED_ATTRIBUTES', 'SPECIFIC_ATTRIBUTES', 'COUNT']).optional(),

@@ -7,6 +7,7 @@ import {
   dynamoTransactGetRequestSch,
   validateDynamoReadQueryRequest,
 } from '../read-command.types';
+import { dynamoReadPropsSch } from '../command.types';
 import { dynamoReadQueryRequestSch } from '../query-request.types';
 
 describe('read command schemas', () => {
@@ -80,5 +81,18 @@ describe('read command schemas', () => {
     };
     expect(validateDynamoReadQueryRequest(request, metadata)).toEqual(request);
     expect(() => validateDynamoReadQueryRequest({ ...request, consistentRead: true }, metadata)).toThrow();
+  });
+
+  it('validates parallel scan segment bounds', () => {
+    expect(
+      dynamoReadPropsSch.parse({ operation: 'SCAN', table: 'Orders', segment: 0, totalSegments: 4 })
+    ).toMatchObject({ segment: 0, totalSegments: 4 });
+
+    expect(() =>
+      dynamoReadPropsSch.parse({ operation: 'SCAN', table: 'Orders', segment: 4, totalSegments: 4 })
+    ).toThrow('segment must be smaller than totalSegments.');
+    expect(() =>
+      dynamoReadPropsSch.parse({ operation: 'SCAN', table: 'Orders', segment: 0, totalSegments: 1_000_001 })
+    ).toThrow();
   });
 });

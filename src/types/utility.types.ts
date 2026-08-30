@@ -58,6 +58,9 @@ export type DynamoFilterOperator = z.infer<typeof dynamoFilterOperatorSch>;
 export const dynamoOperationSch = z.enum(['QUERY', 'SCAN']);
 export type DynamoOperationSch = z.infer<typeof dynamoOperationSch>;
 
+export const returnValuesOptionsSch = z.enum(['ALL_NEW', 'ALL_OLD', 'UPDATED_NEW', 'UPDATED_OLD', 'NONE']);
+export type ReturnValuesOptions = z.infer<typeof returnValuesOptionsSch>;
+
 export const returnConsumedCapacityOptionsSch = z.enum(['INDEXES', 'TOTAL', 'NONE']);
 export type ReturnConsumedCapacityOptions = z.infer<typeof returnConsumedCapacityOptionsSch>;
 

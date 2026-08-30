@@ -101,9 +101,9 @@ export const dynamoFilterSch = z
     }
   });
 
-// ---------------------------------------------------------------------------------------------------------------------
+// ------------------------------------------- Common Read Properties ----------------------------------------------------------
 
-export const commonReadProperties = {
+export const dynamoCommandReadProps = {
   table: requiredStringSch,
   index: optStringSch,
   region: optStringSch.default(`ap-southeast-1`),
@@ -113,79 +113,47 @@ export const commonReadProperties = {
   lastEvaluatedKey: z.record(z.string(), z.unknown()).optional(),
 };
 
-export const dynamoQueryRequestSch = z
+export const dynamoQueryPropsSch = z
   .object({
-    ...commonReadProperties,
+    ...dynamoCommandReadProps,
     operation: z.literal('QUERY'),
     partitionKeys: z.array(dynamoPartitionKeySch).min(1).max(4),
     sortKeys: z.array(dynamoSortKeySch).max(4).default([]),
     sorting: z.enum(['ASC', 'DESC']).default('ASC'),
   })
   .strict();
-export type DynamoQueryRequest = z.infer<typeof dynamoQueryRequestSch>;
+export type DynamoQueryRequest = z.infer<typeof dynamoQueryPropsSch>;
 
-export const dynamoScanRequestSch = z
+export const dynamoScanPropsSch = z
   .object({
-    ...commonReadProperties,
+    ...dynamoCommandReadProps,
     operation: z.literal('SCAN'),
     segment: z.coerce.number().int().nonnegative().optional(),
-    totalSegments: z.coerce.number().int().positive().optional(),
+    totalSegments: z.coerce.number().int().positive().max(1_000_000).optional(),
   })
   .strict();
-export type DynamoScanRequest = z.infer<typeof dynamoScanRequestSch>;
+export type DynamoScanRequest = z.infer<typeof dynamoScanPropsSch>;
 /**
  * Validates the discriminated query or scan request and its cross-field rules.
  */
-export const dynamoReadRequestSch = z
-  .discriminatedUnion('operation', [dynamoQueryRequestSch, dynamoScanRequestSch])
+export const dynamoReadPropsSch = z
+  .discriminatedUnion('operation', [dynamoQueryPropsSch, dynamoScanPropsSch])
   .superRefine((request, ctx) => {
     validatePositions(request.filters, 'filters', ctx);
 
     if (request.operation === 'SCAN') {
-      const hasSegment = request.segment !== undefined;
-      const hasTotalSegments = request.totalSegments !== undefined;
-
-      if (hasSegment !== hasTotalSegments) {
-        ctx.addIssue({
-          code: 'custom',
-          path: hasSegment ? ['totalSegments'] : ['segment'],
-          message: 'segment and totalSegments must be provided together.',
-        });
-      }
-
+      validateParallelScanParams(request, ctx);
       return;
     }
 
-    validatePositions(request.partitionKeys, 'partitionKeys', ctx);
-    validatePositions(request.sortKeys, 'sortKeys', ctx);
-
-    const inequalityIndex = request.sortKeys.findIndex((sortKey) => sortKey.condition !== 'EQUAL_TO');
-
-    if (inequalityIndex >= 0 && inequalityIndex !== request.sortKeys.length - 1) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['sortKeys', inequalityIndex, 'condition'],
-        message: 'A non-equality sort-key condition must be the final sort-key condition.',
-      });
-    }
-
-    const keyNames = new Set([
-      ...request.partitionKeys.map((key) => key.name),
-      ...request.sortKeys.map((key) => key.name),
-    ]);
-
-    request.filters.forEach((filter, index) => {
-      if (keyNames.has(filter.name)) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['filters', index, 'name'],
-          message: 'Query filters cannot target key attributes. Use a key condition.',
-        });
-      }
-    });
+    validateQueryKeyPositions(request, ctx);
+    validateQuerySortKeyConditions(request, ctx);
+    validateQueryFilterKeyUsage(request, ctx);
   });
 
-export type DynamoReadRequest = z.infer<typeof dynamoReadRequestSch>;
+export type DynamoReadProps = z.infer<typeof dynamoReadPropsSch>;
+
+// ---------------------------------------- Utility functions ----------------------------------------------------------
 
 /**
  * Validates that positioned values are continuous and start at position one.
@@ -194,7 +162,7 @@ export type DynamoReadRequest = z.infer<typeof dynamoReadRequestSch>;
  * @param path Request field path used when reporting issues.
  * @param ctx Zod refinement context that receives validation issues.
  */
-function validatePositions(values: Array<{ position: number }>, path: string, ctx: z.RefinementCtx): void {
+export function validatePositions(values: Array<{ position: number }>, path: string, ctx: z.RefinementCtx): void {
   values.forEach((value, index) => {
     const expectedPosition = index + 1;
 
@@ -203,6 +171,91 @@ function validatePositions(values: Array<{ position: number }>, path: string, ct
         code: 'custom',
         path: [path, index, 'position'],
         message: `${path} positions must be continuous and start at 1.`,
+      });
+    }
+  });
+}
+
+/**
+ * Validates that parallel scan parameters are supplied together and that the
+ * segment falls within the configured total segment range.
+ *
+ * @param request Parsed scan request to validate.
+ * @param ctx Zod refinement context that receives validation issues.
+ */
+export function validateParallelScanParams(request: DynamoScanRequest, ctx: z.RefinementCtx): void {
+  const hasSegment = request.segment !== undefined;
+  const hasTotalSegments = request.totalSegments !== undefined;
+
+  if (hasSegment !== hasTotalSegments) {
+    ctx.addIssue({
+      code: 'custom',
+      path: hasSegment ? ['totalSegments'] : ['segment'],
+      message: 'segment and totalSegments must be provided together.',
+    });
+    return;
+  }
+
+  if (
+    typeof request.segment === 'number' &&
+    typeof request.totalSegments === 'number' &&
+    request.segment >= request.totalSegments
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['segment'],
+      message: 'segment must be smaller than totalSegments.',
+    });
+  }
+}
+
+/**
+ * Validates the contiguous positions of query partition and sort keys.
+ *
+ * @param request Parsed query request to validate.
+ * @param ctx Zod refinement context that receives validation issues.
+ */
+export function validateQueryKeyPositions(request: DynamoQueryRequest, ctx: z.RefinementCtx): void {
+  validatePositions(request.partitionKeys, 'partitionKeys', ctx);
+  validatePositions(request.sortKeys, 'sortKeys', ctx);
+}
+
+/**
+ * Ensures that a non-equality sort-key condition is the final key condition.
+ *
+ * @param request Parsed query request to validate.
+ * @param ctx Zod refinement context that receives validation issues.
+ */
+export function validateQuerySortKeyConditions(request: DynamoQueryRequest, ctx: z.RefinementCtx): void {
+  const inequalityIndex = request.sortKeys.findIndex((sortKey) => sortKey.condition !== 'EQUAL_TO');
+
+  if (inequalityIndex >= 0 && inequalityIndex !== request.sortKeys.length - 1) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['sortKeys', inequalityIndex, 'condition'],
+      message: 'A non-equality sort-key condition must be the final sort-key condition.',
+    });
+  }
+}
+
+/**
+ * Prevents query filters from duplicating partition or sort key conditions.
+ *
+ * @param request Parsed query request to validate.
+ * @param ctx Zod refinement context that receives validation issues.
+ */
+export function validateQueryFilterKeyUsage(request: DynamoQueryRequest, ctx: z.RefinementCtx): void {
+  const keyNames = new Set([
+    ...request.partitionKeys.map((key) => key.name),
+    ...request.sortKeys.map((key) => key.name),
+  ]);
+
+  request.filters.forEach((filter, index) => {
+    if (keyNames.has(filter.name)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['filters', index, 'name'],
+        message: 'Query filters cannot target key attributes. Use a key condition.',
       });
     }
   });
