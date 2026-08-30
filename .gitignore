@@ -17,6 +17,7 @@ coverage/
 .eslintcache
 .turbo/
 .vite/
+.vscode
 agents/
 agent/
 
