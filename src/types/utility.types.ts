@@ -5,6 +5,9 @@ import { z } from 'zod';
 export const genericRecordSch = z.record(z.string(), z.unknown());
 export type GenericRecord = z.infer<typeof genericRecordSch>;
 
+export const stringRecordSch = z.record(z.string(), z.string());
+export type StringRecord = z.infer<typeof stringRecordSch>;
+
 export const requiredStringSch = z.string().trim().min(1);
 export type RequiredString = z.infer<typeof requiredStringSch>;
 
@@ -54,3 +57,9 @@ export type DynamoFilterOperator = z.infer<typeof dynamoFilterOperatorSch>;
 
 export const dynamoOperationSch = z.enum(['QUERY', 'SCAN']);
 export type DynamoOperationSch = z.infer<typeof dynamoOperationSch>;
+
+export const returnConsumedCapacityOptionsSch = z.enum(['INDEXES', 'TOTAL', 'NONE']);
+export type ReturnConsumedCapacityOptions = z.infer<typeof returnConsumedCapacityOptionsSch>;
+
+export const returnItemCollectionMetricsOptionsSch = z.enum(['SIZE', 'NONE']);
+export type ReturnItemCollectionMetricsOptions = z.infer<typeof returnItemCollectionMetricsOptionsSch>;

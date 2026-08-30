@@ -31,26 +31,61 @@ const stringBooleanSch = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
-const lastEvaluatedKeySch = z.preprocess((value) => {
-  if (value === '' || value === null || value === undefined) {
-    return undefined;
-  }
+const optionalIntegerSch = z.preprocess((value) => {
+  if (value === '' || value === null || value === undefined) return undefined;
+  if (typeof value === 'string' && !/^(0|[1-9]\d*)$/.test(value.trim())) return value;
+  return typeof value === 'string' ? Number(value.trim()) : value;
+}, z.number().int().optional());
 
-  if (typeof value === 'object') {
-    return value;
-  }
+const filterValueSch = z.preprocess(
+  (value) => {
+    if (value === '' || value === undefined) return undefined;
+    return typeof value === 'string' ? value.trim() : value;
+  },
+  z.union([z.string().min(1), z.null()]).optional()
+);
 
-  if (typeof value !== 'string') {
-    return value;
-  }
+function normalizeNullFilterValues(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
 
-  try {
-    return JSON.parse(value);
-  } catch {
-    // Let the Zod record schema produce the validation error.
-    return value;
+  const normalized = { ...value } as GenericRecord;
+  for (let position = 1; position <= 5; position++) {
+    if (
+      normalized[`filterAttr${position}ValueType`] === 'NULL' &&
+      normalized[`filterAttr${position}Value`] === undefined
+    ) {
+      normalized[`filterAttr${position}Value`] = null;
+    }
   }
-}, z.record(z.string(), z.unknown()).optional());
+  return normalized;
+}
+
+const lastEvaluatedKeySch = z.preprocess(
+  (value) => {
+    if (value === '' || value === null || value === undefined) {
+      return undefined;
+    }
+
+    if (typeof value === 'object') {
+      return value;
+    }
+
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    try {
+      return JSON.parse(value);
+    } catch {
+      // Let the Zod record schema produce the validation error.
+      return value;
+    }
+  },
+  z
+    .record(z.string(), z.union([z.string(), z.number(), z.instanceof(Uint8Array)]).optional())
+    .refine((key) => Object.keys(key).length > 0, 'lastEvaluatedKey must contain at least one key.')
+    .optional()
+);
 
 const readOperationSch = z.preprocess(
   (value) => (typeof value === 'string' ? value.trim().toUpperCase() : value),
@@ -70,99 +105,107 @@ const sortingSch = z.preprocess(
 
 // ---------------------------------------Single Query/Scan request schema  ----------------------------------------------------
 export const dynamoReadQueryRequestSch = z
-  .object({
-    operation: readOperationSch.default('QUERY'),
-    // Query target
-    table: z.string().trim().min(1),
-    index: optStringSch,
-    region: optStringSch,
-    tab: optStringSch,
-    maximize: stringBooleanSch.optional(),
+  .preprocess(
+    normalizeNullFilterValues,
+    z
+      .object({
+        operation: readOperationSch.default('QUERY'),
+        // Query target
+        table: z.string().trim().min(1),
+        index: optStringSch,
+        region: optStringSch,
+        tab: optStringSch,
+        maximize: stringBooleanSch.optional(),
 
-    // Partition-key attributes
-    pkAttr1Name: optStringSch,
-    pkAttr1Value: optStringSch,
-    pkAttr1ValueType: dynamoKeyAttrTypeSch.optional(),
+        // Partition-key attributes
+        pkAttr1Name: optStringSch,
+        pkAttr1Value: optStringSch,
+        pkAttr1ValueType: dynamoKeyAttrTypeSch.optional(),
 
-    pkAttr2Name: optStringSch,
-    pkAttr2Value: optStringSch,
-    pkAttr2ValueType: dynamoKeyAttrTypeSch.optional(),
+        pkAttr2Name: optStringSch,
+        pkAttr2Value: optStringSch,
+        pkAttr2ValueType: dynamoKeyAttrTypeSch.optional(),
 
-    pkAttr3Name: optStringSch,
-    pkAttr3Value: optStringSch,
-    pkAttr3ValueType: dynamoKeyAttrTypeSch.optional(),
+        pkAttr3Name: optStringSch,
+        pkAttr3Value: optStringSch,
+        pkAttr3ValueType: dynamoKeyAttrTypeSch.optional(),
 
-    pkAttr4Name: optStringSch,
-    pkAttr4Value: optStringSch,
-    pkAttr4ValueType: dynamoKeyAttrTypeSch.optional(),
+        pkAttr4Name: optStringSch,
+        pkAttr4Value: optStringSch,
+        pkAttr4ValueType: dynamoKeyAttrTypeSch.optional(),
 
-    // Sort-key attributes
-    skAttr1Name: optStringSch,
-    skAttr1Condition: dynamoSortOperatorSch.optional(),
-    skAttr1Value: optStringSch,
-    skAttr1Value2: optStringSch,
-    skAttr1ValueType: dynamoKeyAttrTypeSch.optional(),
+        // Sort-key attributes
+        skAttr1Name: optStringSch,
+        skAttr1Condition: dynamoSortOperatorSch.optional(),
+        skAttr1Value: optStringSch,
+        skAttr1Value2: optStringSch,
+        skAttr1ValueType: dynamoKeyAttrTypeSch.optional(),
 
-    skAttr2Name: optStringSch,
-    skAttr2Condition: dynamoSortOperatorSch.optional(),
-    skAttr2Value: optStringSch,
-    skAttr2Value2: optStringSch,
-    skAttr2ValueType: dynamoKeyAttrTypeSch.optional(),
+        skAttr2Name: optStringSch,
+        skAttr2Condition: dynamoSortOperatorSch.optional(),
+        skAttr2Value: optStringSch,
+        skAttr2Value2: optStringSch,
+        skAttr2ValueType: dynamoKeyAttrTypeSch.optional(),
 
-    skAttr3Name: optStringSch,
-    skAttr3Condition: dynamoSortOperatorSch.optional(),
-    skAttr3Value: optStringSch,
-    skAttr3Value2: optStringSch,
-    skAttr3ValueType: dynamoKeyAttrTypeSch.optional(),
+        skAttr3Name: optStringSch,
+        skAttr3Condition: dynamoSortOperatorSch.optional(),
+        skAttr3Value: optStringSch,
+        skAttr3Value2: optStringSch,
+        skAttr3ValueType: dynamoKeyAttrTypeSch.optional(),
 
-    skAttr4Name: optStringSch,
-    skAttr4Condition: dynamoSortOperatorSch.optional(),
-    skAttr4Value: optStringSch,
-    skAttr4Value2: optStringSch,
-    skAttr4ValueType: dynamoKeyAttrTypeSch.optional(),
+        skAttr4Name: optStringSch,
+        skAttr4Condition: dynamoSortOperatorSch.optional(),
+        skAttr4Value: optStringSch,
+        skAttr4Value2: optStringSch,
+        skAttr4ValueType: dynamoKeyAttrTypeSch.optional(),
 
-    // Filter attributes
-    filterJoin: z.enum(['AND', 'OR']).default('AND'),
+        // Filter attributes
+        filterJoin: z.enum(['AND', 'OR']).default('AND'),
 
-    filterAttr1Name: optStringSch,
-    filterAttr1Condition: dynamoFilterOperatorSch.optional(),
-    filterAttr1ValueType: dynamoAttrTypeSch.optional(),
-    filterAttr1Value: optStringSch,
-    filterAttr1Value2: optStringSch,
+        filterAttr1Name: optStringSch,
+        filterAttr1Condition: dynamoFilterOperatorSch.optional(),
+        filterAttr1ValueType: dynamoAttrTypeSch.optional(),
+        filterAttr1Value: filterValueSch,
+        filterAttr1Value2: optStringSch,
 
-    filterAttr2Name: optStringSch,
-    filterAttr2Condition: dynamoFilterOperatorSch.optional(),
-    filterAttr2ValueType: dynamoAttrTypeSch.optional(),
-    filterAttr2Value: optStringSch,
-    filterAttr2Value2: optStringSch,
+        filterAttr2Name: optStringSch,
+        filterAttr2Condition: dynamoFilterOperatorSch.optional(),
+        filterAttr2ValueType: dynamoAttrTypeSch.optional(),
+        filterAttr2Value: filterValueSch,
+        filterAttr2Value2: optStringSch,
 
-    filterAttr3Name: optStringSch,
-    filterAttr3Condition: dynamoFilterOperatorSch.optional(),
-    filterAttr3ValueType: dynamoAttrTypeSch.optional(),
-    filterAttr3Value: optStringSch,
-    filterAttr3Value2: optStringSch,
+        filterAttr3Name: optStringSch,
+        filterAttr3Condition: dynamoFilterOperatorSch.optional(),
+        filterAttr3ValueType: dynamoAttrTypeSch.optional(),
+        filterAttr3Value: filterValueSch,
+        filterAttr3Value2: optStringSch,
 
-    filterAttr4Name: optStringSch,
-    filterAttr4Condition: dynamoFilterOperatorSch.optional(),
-    filterAttr4ValueType: dynamoAttrTypeSch.optional(),
-    filterAttr4Value: optStringSch,
-    filterAttr4Value2: optStringSch,
+        filterAttr4Name: optStringSch,
+        filterAttr4Condition: dynamoFilterOperatorSch.optional(),
+        filterAttr4ValueType: dynamoAttrTypeSch.optional(),
+        filterAttr4Value: filterValueSch,
+        filterAttr4Value2: optStringSch,
 
-    filterAttr5Name: optStringSch,
-    filterAttr5Condition: dynamoFilterOperatorSch.optional(),
-    filterAttr5ValueType: dynamoAttrTypeSch.optional(),
-    filterAttr5Value: optStringSch,
-    filterAttr5Value2: optStringSch,
+        filterAttr5Name: optStringSch,
+        filterAttr5Condition: dynamoFilterOperatorSch.optional(),
+        filterAttr5ValueType: dynamoAttrTypeSch.optional(),
+        filterAttr5Value: filterValueSch,
+        filterAttr5Value2: optStringSch,
 
-    // Read, pagination and Scan options
-    sorting: sortingSch,
-    limit: z.coerce.number().int().positive().optional(),
-    consistentRead: stringBooleanSch.optional(),
-    lastEvaluatedKey: lastEvaluatedKeySch,
-    segment: z.coerce.number().int().nonnegative().optional(),
-    totalSegments: z.coerce.number().int().positive().optional(),
-  })
-  .strict()
+        // Read, pagination and Scan options
+        sorting: sortingSch,
+        limit: optionalIntegerSch.pipe(z.number().positive().optional()),
+        consistentRead: stringBooleanSch.optional(),
+        lastEvaluatedKey: lastEvaluatedKeySch,
+        segment: optionalIntegerSch.pipe(z.number().nonnegative().optional()),
+        totalSegments: optionalIntegerSch.pipe(z.number().positive().max(1_000_000).optional()),
+        projectionExpression: optStringSch,
+        expressionAttributeNames: z.record(z.string().min(1), z.string().min(1)).optional(),
+        select: z.enum(['ALL_ATTRIBUTES', 'ALL_PROJECTED_ATTRIBUTES', 'SPECIFIC_ATTRIBUTES', 'COUNT']).optional(),
+        returnConsumedCapacity: z.enum(['INDEXES', 'TOTAL', 'NONE']).optional(),
+      })
+      .strict()
+  )
   .superRefine((params, ctx) => {
     validateOperationParams(params, ctx);
     validatePartitionKeyParams(params, ctx);
@@ -170,6 +213,7 @@ export const dynamoReadQueryRequestSch = z
     validateFilterParams(params, ctx);
     validateQueryFilterKeyUsage(params, ctx);
     validateParallelScanParams(params, ctx);
+    validateProjectionParams(params, ctx);
   });
 
 export type DynamoReadQueryRequest = z.infer<typeof dynamoReadQueryRequestSch>;
@@ -230,8 +274,7 @@ function validateOperationParams(params: GenericRecord, ctx: z.RefinementCtx): v
 /**
  * Validates QUERY partition-key slots and required values.
  *
- * Partition-key slots must be continuous, and every populated slot must have
- * both a name and a value.
+ * QUERY supports exactly one partition-key equality condition.
  *
  * @param params Parsed request values being validated.
  * @param ctx Zod refinement context used to report validation issues.
@@ -239,49 +282,25 @@ function validateOperationParams(params: GenericRecord, ctx: z.RefinementCtx): v
 function validatePartitionKeyParams(params: GenericRecord, ctx: z.RefinementCtx): void {
   if (params.operation !== 'QUERY') return;
 
-  let foundEmptySlot = false;
-
   for (let position = 1; position <= 4; position++) {
     const prefix = `pkAttr${position}`;
-
-    const name = params[`${prefix}Name`];
-    const value = params[`${prefix}Value`];
-
-    const hasAnyField = hasAnyDefined(params, [`${prefix}Name`, `${prefix}Value`, `${prefix}ValueType`]);
-
-    if (!hasAnyField) {
-      foundEmptySlot = true;
-      continue;
-    }
-
-    if (foundEmptySlot) {
-      addIssue(ctx, `${prefix}Name`, 'Partition-key slots must be continuous without gaps.');
-    }
-
-    if (!name) {
-      addIssue(ctx, `${prefix}Name`, `Partition key ${position} requires a name.`);
-    }
-
-    if (!value) {
-      addIssue(ctx, `${prefix}Value`, `Partition key ${position} requires a value.`);
-    }
+    if (!hasAnyDefined(params, [`${prefix}Name`, `${prefix}Value`, `${prefix}ValueType`])) continue;
+    if (!params[`${prefix}Name`]) addIssue(ctx, `${prefix}Name`, `Partition key ${position} requires a name.`);
+    if (!params[`${prefix}Value`]) addIssue(ctx, `${prefix}Value`, `Partition key ${position} requires a value.`);
   }
 }
 
 /**
  * Validates QUERY sort-key slots, operators, and operator-specific values.
  *
- * Sort-key slots must be continuous, only BETWEEN may use a second value, and
- * the first non-equality condition must be the final sort-key condition.
+ * QUERY supports at most one sort-key condition. BETWEEN may use a second
+ * value, while all other operators accept only one value.
  *
  * @param params Parsed request values being validated.
  * @param ctx Zod refinement context used to report validation issues.
  */
 function validateSortKeyParams(params: GenericRecord, ctx: z.RefinementCtx): void {
   if (params.operation !== 'QUERY') return;
-
-  let foundEmptySlot = false;
-  let foundInequality = false;
 
   for (let position = 1; position <= 4; position++) {
     const prefix = `skAttr${position}`;
@@ -303,18 +322,7 @@ function validateSortKeyParams(params: GenericRecord, ctx: z.RefinementCtx): voi
       `${prefix}ValueType`,
     ]);
 
-    if (!hasAnyField) {
-      foundEmptySlot = true;
-      continue;
-    }
-
-    if (foundEmptySlot) {
-      addIssue(ctx, `${prefix}Name`, 'Sort-key slots must be continuous without gaps.');
-    }
-
-    if (foundInequality) {
-      addIssue(ctx, `${prefix}Condition`, 'No sort-key condition may follow an inequality.');
-    }
+    if (!hasAnyField) continue;
 
     if (!name) {
       addIssue(ctx, `${prefix}Name`, `Sort key ${position} requires a name.`);
@@ -335,10 +343,6 @@ function validateSortKeyParams(params: GenericRecord, ctx: z.RefinementCtx): voi
     if (condition === 'BEGINS_WITH' && valueType === 'N') {
       addIssue(ctx, `${prefix}ValueType`, 'BEGINS_WITH does not support number values.');
     }
-
-    if (condition !== 'EQUAL_TO') {
-      foundInequality = true;
-    }
   }
 }
 
@@ -346,7 +350,7 @@ function validateSortKeyParams(params: GenericRecord, ctx: z.RefinementCtx): voi
  * Validates filter slots, conditions, value requirements, and value types.
  *
  * Filter slots must be continuous. EXISTS and NOT_EXISTS do not accept values,
- * NULL does not require a value, and BETWEEN and BEGINS_WITH have restricted
+ * NULL is represented by an explicit native null value, and BETWEEN and BEGINS_WITH have restricted
  * value and type combinations.
  *
  * @param params Parsed request values being validated.
@@ -484,6 +488,23 @@ function validateParallelScanParams(params: GenericRecord, ctx: z.RefinementCtx)
     params.segment >= params.totalSegments
   ) {
     addIssue(ctx, 'segment', 'segment must be smaller than totalSegments.');
+  }
+}
+
+function validateProjectionParams(params: GenericRecord, ctx: z.RefinementCtx): void {
+  const hasProjection = params.projectionExpression !== undefined;
+  const select = params.select;
+
+  if (select === 'SPECIFIC_ATTRIBUTES' && !hasProjection) {
+    addIssue(ctx, 'projectionExpression', 'SPECIFIC_ATTRIBUTES requires projectionExpression.');
+  }
+
+  if (select === 'ALL_ATTRIBUTES' && hasProjection) {
+    addIssue(ctx, 'select', 'ALL_ATTRIBUTES cannot be used with projectionExpression.');
+  }
+
+  if (select === 'COUNT' && hasProjection) {
+    addIssue(ctx, 'projectionExpression', 'COUNT cannot be used with projectionExpression.');
   }
 }
 

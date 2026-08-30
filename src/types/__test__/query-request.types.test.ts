@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { dynamoReadQueryRequestSch } from '../query-request.types';
+import { validateDynamoReadQueryRequest } from '../read-command.types';
 
 /**
  * These tests model how `dynamoReadQueryRequestSch` is actually used in this
@@ -188,6 +189,56 @@ describe('dynamoReadQueryRequestSch', () => {
   });
 
   describe('invalid QUERY requests', () => {
+    it('rejects a second partition-key condition for a traditional target', () => {
+      const rawQueryParams = {
+        operation: 'QUERY',
+        table: 'Orders',
+        pkAttr1Name: 'customerId',
+        pkAttr1Value: 'cust-42',
+        pkAttr2Name: 'accountId',
+        pkAttr2Value: 'account-7',
+      };
+
+      const request = dynamoReadQueryRequestSch.parse(rawQueryParams);
+      expect(() =>
+        validateDynamoReadQueryRequest(request, {
+          table: { partitionKeys: [{ name: 'customerId', valueType: 'S' }], sortKeys: [] },
+        })
+      ).toThrow();
+    });
+
+    it('accepts ordered key conditions for a multi-attribute GSI', () => {
+      const rawQueryParams = {
+        operation: 'QUERY',
+        table: 'Orders',
+        index: 'orders-index',
+        pkAttr1Name: 'customerId',
+        pkAttr1Value: 'cust-42',
+        skAttr1Name: 'orderDate',
+        skAttr1Condition: 'EQUAL_TO',
+        skAttr1Value: '2026-01-01',
+        skAttr2Name: 'orderId',
+        skAttr2Value: 'ord-1',
+      };
+
+      const request = dynamoReadQueryRequestSch.parse(rawQueryParams);
+      expect(
+        validateDynamoReadQueryRequest(request, {
+          table: { partitionKeys: [{ name: 'customerId', valueType: 'S' }], sortKeys: [] },
+          indexes: {
+            'orders-index': {
+              kind: 'GSI',
+              partitionKeys: [{ name: 'customerId', valueType: 'S' }],
+              sortKeys: [
+                { name: 'orderDate', valueType: 'S' },
+                { name: 'orderId', valueType: 'S' },
+              ],
+            },
+          },
+        })
+      ).toEqual(request);
+    });
+
     it('rejects a QUERY missing the first partition-key name/value', () => {
       const rawQueryParams = {
         operation: 'QUERY',
@@ -216,11 +267,18 @@ describe('dynamoReadQueryRequestSch', () => {
       const rawQueryParams = {
         operation: 'QUERY',
         table: 'Orders',
-        pkAttr2Name: 'customerId',
-        pkAttr2Value: 'cust-42',
+        pkAttr1Name: 'customerId',
+        pkAttr1Value: 'cust-42',
+        pkAttr3Name: 'accountId',
+        pkAttr3Value: 'account-7',
       };
 
-      expect(() => dynamoReadQueryRequestSch.parse(rawQueryParams)).toThrow();
+      const request = dynamoReadQueryRequestSch.parse(rawQueryParams);
+      expect(() =>
+        validateDynamoReadQueryRequest(request, {
+          table: { partitionKeys: [{ name: 'customerId', valueType: 'S' }], sortKeys: [] },
+        })
+      ).toThrow();
     });
 
     it('rejects a partition-key slot with a name but no value', () => {
@@ -243,7 +301,15 @@ describe('dynamoReadQueryRequestSch', () => {
         skAttr2Value: '2026-01-01',
       };
 
-      expect(() => dynamoReadQueryRequestSch.parse(rawQueryParams)).toThrow();
+      const request = dynamoReadQueryRequestSch.parse(rawQueryParams);
+      expect(() =>
+        validateDynamoReadQueryRequest(request, {
+          table: {
+            partitionKeys: [{ name: 'customerId', valueType: 'S' }],
+            sortKeys: [{ name: 'orderDate', valueType: 'S' }],
+          },
+        })
+      ).toThrow();
     });
 
     it('rejects a BETWEEN sort-key condition missing the second value', () => {
@@ -303,7 +369,15 @@ describe('dynamoReadQueryRequestSch', () => {
         skAttr2Value: 'ord-1',
       };
 
-      expect(() => dynamoReadQueryRequestSch.parse(rawQueryParams)).toThrow();
+      const request = dynamoReadQueryRequestSch.parse(rawQueryParams);
+      expect(() =>
+        validateDynamoReadQueryRequest(request, {
+          table: {
+            partitionKeys: [{ name: 'customerId', valueType: 'S' }],
+            sortKeys: [{ name: 'orderDate', valueType: 'S' }],
+          },
+        })
+      ).toThrow();
     });
 
     it('rejects a filter targeting a key attribute already used in the key condition', () => {
@@ -370,7 +444,7 @@ describe('dynamoReadQueryRequestSch', () => {
       expect(() => dynamoReadQueryRequestSch.parse(rawQueryParams)).toThrow();
     });
 
-    it('allows a NULL-type filter to omit its value', () => {
+    it('normalizes an omitted NULL-type filter value to null', () => {
       const rawQueryParams = {
         operation: 'SCAN',
         table: 'Orders',
@@ -382,6 +456,7 @@ describe('dynamoReadQueryRequestSch', () => {
       const result = dynamoReadQueryRequestSch.parse(rawQueryParams);
 
       expect(result.filterAttr1ValueType).toBe('NULL');
+      expect(result.filterAttr1Value).toBeNull();
     });
 
     it('rejects a BETWEEN filter missing the second value', () => {
@@ -459,6 +534,28 @@ describe('dynamoReadQueryRequestSch', () => {
 
       expect(result).toMatchObject({ segment: 0, totalSegments: 4 });
     });
+
+    it('accepts the maximum totalSegments value', () => {
+      const result = dynamoReadQueryRequestSch.parse({
+        operation: 'SCAN',
+        table: 'Orders',
+        segment: '999999',
+        totalSegments: '1000000',
+      });
+
+      expect(result.totalSegments).toBe(1_000_000);
+    });
+
+    it('rejects totalSegments above the AWS maximum', () => {
+      expect(() =>
+        dynamoReadQueryRequestSch.parse({
+          operation: 'SCAN',
+          table: 'Orders',
+          segment: '0',
+          totalSegments: '1000001',
+        })
+      ).toThrow();
+    });
   });
 
   describe('invalid shared field values', () => {
@@ -475,6 +572,12 @@ describe('dynamoReadQueryRequestSch', () => {
     it('rejects a non-positive limit', () => {
       expect(() => dynamoReadQueryRequestSch.parse({ operation: 'SCAN', table: 'Orders', limit: '0' })).toThrow();
       expect(() => dynamoReadQueryRequestSch.parse({ operation: 'SCAN', table: 'Orders', limit: '-5' })).toThrow();
+    });
+
+    it('rejects non-canonical integer query-string values', () => {
+      for (const limit of ['1.5', '1e2', '0x10', ' ']) {
+        expect(() => dynamoReadQueryRequestSch.parse({ operation: 'SCAN', table: 'Orders', limit })).toThrow();
+      }
     });
 
     it('rejects an invalid lastEvaluatedKey JSON string', () => {
