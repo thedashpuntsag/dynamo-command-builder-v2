@@ -66,11 +66,75 @@ export const customBatchGetCmdInputSch = z
 export type CustomBatchGetCmdInput = z.infer<typeof customBatchGetCmdInputSch>;
 
 // --------------------------------------- Batch write command schemas -------------------------------------------------
-export const customBatchWriteCmdInputSch = z.object({
-  tableName: z.string(),
-  requestItems: genericRecordSch,
-  returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
-});
+const batchWriteKeySchemaSch = z
+  .object({
+    partitionKey: z.string().min(1),
+    sortKey: z.string().min(1).optional(),
+  })
+  .strict()
+  .refine(({ partitionKey, sortKey }) => partitionKey !== sortKey, {
+    message: 'Partition key and sort key must be different.',
+    path: ['sortKey'],
+  });
+
+const batchPutOperationSch = z
+  .object({
+    operation: z.literal('PUT'),
+    item: genericRecordSch,
+  })
+  .strict();
+
+const batchDeleteOperationSch = z
+  .object({
+    operation: z.literal('DELETE'),
+    key: genericRecordSch,
+  })
+  .strict();
+
+const batchWriteOperationSch = z.discriminatedUnion('operation', [batchPutOperationSch, batchDeleteOperationSch]);
+
+const batchWriteTableSch = z
+  .object({
+    tableName: z.string().min(1).max(1024),
+    keySchema: batchWriteKeySchemaSch,
+    operations: z.array(batchWriteOperationSch).min(1).max(25),
+  })
+  .strict();
+
+export const customBatchWriteCmdInputSch = z
+  .object({
+    tables: z.array(batchWriteTableSch).min(1).max(25),
+    returnConsumedCapacity: z.enum(['NONE', 'TOTAL', 'INDEXES']).default('NONE'),
+    returnItemCollectionMetrics: z.enum(['NONE', 'SIZE']).default('NONE'),
+  })
+  .strict()
+  .superRefine(({ tables }, ctx) => {
+    const tableNames = new Set<string>();
+    let totalOperationCount = 0;
+
+    tables.forEach((table, index) => {
+      totalOperationCount += table.operations.length;
+
+      if (tableNames.has(table.tableName)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate table "${table.tableName}" is not allowed.`,
+          path: ['tables', index, 'tableName'],
+        });
+      }
+
+      tableNames.add(table.tableName);
+    });
+
+    if (totalOperationCount > 25) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A BatchWriteItem request supports at most 25 operations in total.',
+        path: ['tables'],
+      });
+    }
+  });
+
 export type CustomBatchWriteCmdInput = z.infer<typeof customBatchWriteCmdInputSch>;
 
 // --------------------------------------- Delete command schemas ------------------------------------------------------

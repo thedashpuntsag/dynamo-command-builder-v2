@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// --------------------------------------- General Utility Types --------------------------------------------------------
+// --------------------------------------- General Utility Types -------------------------------------------------------
 
 export const genericRecordSch = z.record(z.string(), z.unknown());
 export type GenericRecord = z.infer<typeof genericRecordSch>;

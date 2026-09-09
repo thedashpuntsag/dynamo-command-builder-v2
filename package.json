@@ -53,7 +53,7 @@
     "url": "https://github.com/thedashpuntsag/dynamo-command-builder-v2/issues"
   },
   "homepage": "https://github.com/thedashpuntsag/dynamo-command-builder-v2#readme",
-  "packageManager": "pnpm@11.24.0",
+  "packageManager": "pnpm@12.3.4",
   "engines": {
     "node": ">=20.0.0"
   },
