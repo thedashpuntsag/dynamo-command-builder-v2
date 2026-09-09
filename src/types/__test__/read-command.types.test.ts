@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { dynamoReadPropsSch } from '../command.types';
+import { dynamoReadQueryRequestSch } from '../query-request.types';
 import {
   decodeDynamoValue,
   dynamoBatchGetRequestSch,
@@ -7,8 +9,6 @@ import {
   dynamoTransactGetRequestSch,
   validateDynamoReadQueryRequest,
 } from '../read-command.types';
-import { dynamoReadPropsSch } from '../command.types';
-import { dynamoReadQueryRequestSch } from '../query-request.types';
 
 describe('read command schemas', () => {
   it('validates Get requests with a complete-shaped key', () => {

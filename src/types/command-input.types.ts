@@ -10,11 +10,59 @@ import {
 } from './utility.types';
 
 // --------------------------------------- Batch get command schemas ---------------------------------------------------
-export const customBatchGetCmdInputSch = z.object({
-  tableName: z.string(),
-  requestItems: genericRecordSch,
-  returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
-});
+
+export const keyValueSch = z.union([
+  z.string().min(1),
+  z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
+]);
+export type KeyValue = z.infer<typeof keyValueSch>;
+
+export const batchGetTableSch = z
+  .object({
+    tableName: z.string().min(1).max(1024),
+    keys: z
+      .array(z.record(z.string().min(1), keyValueSch))
+      .min(1)
+      .max(100),
+    attributes: z.array(z.string().min(1)).min(1).optional(),
+    consistentRead: z.boolean().default(false),
+  })
+  .strict();
+
+export const customBatchGetCmdInputSch = z
+  .object({
+    tables: z.array(batchGetTableSch).min(1).max(100),
+
+    returnConsumedCapacity: z.enum(['NONE', 'TOTAL', 'INDEXES']).default('NONE'),
+  })
+  .strict()
+  .superRefine(({ tables }, ctx) => {
+    const tableNames = new Set<string>();
+    let totalKeyCount = 0;
+
+    tables.forEach((table, index) => {
+      totalKeyCount += table.keys.length;
+
+      if (tableNames.has(table.tableName)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate table "${table.tableName}" is not allowed.`,
+          path: ['tables', index, 'tableName'],
+        });
+      }
+
+      tableNames.add(table.tableName);
+    });
+
+    if (totalKeyCount > 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A BatchGetItem request supports at most 100 keys in total.',
+        path: ['tables'],
+      });
+    }
+  });
+
 export type CustomBatchGetCmdInput = z.infer<typeof customBatchGetCmdInputSch>;
 
 // --------------------------------------- Batch write command schemas -------------------------------------------------
