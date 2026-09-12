@@ -17,6 +17,17 @@ export const keyValueSch = z.union([
 ]);
 export type KeyValue = z.infer<typeof keyValueSch>;
 
+export const deleteKeySch = z.record(z.string().min(1), keyValueSch).refine(
+  (key) => {
+    const keyCount = Object.keys(key).length;
+    return keyCount >= 1 && keyCount <= 2;
+  },
+  {
+    message: 'Key must contain a partition key and optional sort key.',
+  }
+);
+export type DeleteKey = z.infer<typeof deleteKeySch>;
+
 export const batchGetTableSch = z
   .object({
     tableName: z.string().min(1).max(1024),
@@ -138,14 +149,94 @@ export const customBatchWriteCmdInputSch = z
 export type CustomBatchWriteCmdInput = z.infer<typeof customBatchWriteCmdInputSch>;
 
 // --------------------------------------- Delete command schemas ------------------------------------------------------
-export const customDeleteCmdInputSch = z.object({
-  tableName: z.string(),
-  key: genericRecordSch,
-  conditionExpression: optStringSch,
-  expressionAttributeNames: stringRecordSch.optional(),
-  expressionAttributeValues: genericRecordSch.optional(),
-  returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
-});
+export const customDeleteCmdInputSch = z
+  .object({
+    tableName: z.string(),
+    key: deleteKeySch,
+    conditionExpression: z.string().trim().min(1).optional(),
+    expressionAttributeNames: stringRecordSch.optional(),
+    expressionAttributeValues: genericRecordSch.optional(),
+    returnValues: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
+    returnValuesOnConditionCheckFailure: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
+    returnConsumedCapacity: z.enum(['NONE', 'TOTAL', 'INDEXES']).default('NONE'),
+    returnItemCollectionMetrics: z.enum(['NONE', 'SIZE']).default('NONE'),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    const conditionExpression = input.conditionExpression;
+    if (!conditionExpression) {
+      if (input.expressionAttributeNames) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'ExpressionAttributeNames requires a conditionExpression.',
+          path: ['expressionAttributeNames'],
+        });
+      }
+
+      if (input.expressionAttributeValues) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'ExpressionAttributeValues requires a conditionExpression.',
+          path: ['expressionAttributeValues'],
+        });
+      }
+
+      if (input.returnValuesOnConditionCheckFailure === 'ALL_OLD') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'ReturnValuesOnConditionCheckFailure requires a conditionExpression.',
+          path: ['returnValuesOnConditionCheckFailure'],
+        });
+      }
+
+      return;
+    }
+
+    const referencedNameTokens = new Set(conditionExpression.match(/#[A-Za-z0-9_]+/g) ?? []);
+    const referencedValueTokens = new Set(conditionExpression.match(/:[A-Za-z0-9_]+/g) ?? []);
+    const definedNameTokens = new Set(Object.keys(input.expressionAttributeNames ?? {}));
+    const definedValueTokens = new Set(Object.keys(input.expressionAttributeValues ?? {}));
+
+    for (const token of referencedNameTokens) {
+      if (!definedNameTokens.has(token)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Missing definition for expression name token "${token}".`,
+          path: ['expressionAttributeNames'],
+        });
+      }
+    }
+
+    for (const token of referencedValueTokens) {
+      if (!definedValueTokens.has(token)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Missing definition for expression value token "${token}".`,
+          path: ['expressionAttributeValues'],
+        });
+      }
+    }
+
+    for (const token of definedNameTokens) {
+      if (!referencedNameTokens.has(token)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Unused expression name token "${token}".`,
+          path: ['expressionAttributeNames', token],
+        });
+      }
+    }
+
+    for (const token of definedValueTokens) {
+      if (!referencedValueTokens.has(token)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Unused expression value token "${token}".`,
+          path: ['expressionAttributeValues', token],
+        });
+      }
+    }
+  });
 export type CustomDeleteCmdInput = z.infer<typeof customDeleteCmdInputSch>;
 
 // --------------------------------------- Get command schemas ---------------------------------------------------------
