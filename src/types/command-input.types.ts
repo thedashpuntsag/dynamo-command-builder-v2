@@ -240,14 +240,44 @@ export const customDeleteCmdInputSch = z
 export type CustomDeleteCmdInput = z.infer<typeof customDeleteCmdInputSch>;
 
 // --------------------------------------- Get command schemas ---------------------------------------------------------
-export const customGetCmdInputSch = z.object({
-  tableName: z.string(),
-  key: genericRecordSch,
-  projectionExpression: optStringSch,
-  expressionAttributeNames: stringRecordSch.optional(),
-  consistentRead: z.boolean().optional(),
-  returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
-});
+const projectionAttributeSch = z
+  .string()
+  .trim()
+  .min(1)
+  .regex(/^[^.[\]]+(?:\.[^.[\]]+|\[\d+\])*$/, 'Invalid projection attribute path.');
+
+const getKeyValueSch = z.union([
+  z.string().min(1),
+  z.number().finite(),
+  z.bigint(),
+  z.instanceof(Uint8Array).refine((value) => value.length > 0, 'Binary key values must not be empty.'),
+]);
+
+const getKeySch = z
+  .record(z.string().min(1), getKeyValueSch)
+  .refine((key) => Object.keys(key).length >= 1 && Object.keys(key).length <= 2, {
+    message: 'Key must contain a partition key and optional sort key.',
+  });
+
+export const customGetCmdInputSch = z
+  .object({
+    tableName: z.string().min(1),
+    key: getKeySch,
+    attributes: z.array(projectionAttributeSch).min(1).optional(),
+    projectionExpression: optStringSch,
+    expressionAttributeNames: stringRecordSch.optional(),
+    consistentRead: z.boolean().default(false),
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.expressionAttributeNames && !input.projectionExpression) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'expressionAttributeNames requires projectionExpression.',
+        path: ['expressionAttributeNames'],
+      });
+    }
+  });
 export type CustomGetCmdInput = z.infer<typeof customGetCmdInputSch>;
 
 // --------------------------------------- Put command schemas ---------------------------------------------------------
