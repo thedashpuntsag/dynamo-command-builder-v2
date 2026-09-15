@@ -83,9 +83,7 @@ export function buildValidatedBatchWriteCommandInput(input: unknown): BatchWrite
         const sourceRecord = write.operation === 'PUT' ? write.item : write.key;
 
         const key = getItemKey(sourceRecord, table.keySchema, write.operation === 'DELETE');
-
         const keySignature = createKeySignature(key);
-
         if (targetedKeys.has(keySignature)) {
           throw new Error(`Multiple operations target the same item in table "${table.tableName}".`);
         }
