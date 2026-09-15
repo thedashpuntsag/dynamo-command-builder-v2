@@ -15,88 +15,88 @@ import { AttributeValue, BatchGetItemCommandInput } from '@aws-sdk/client-dynamo
  * @returns The constructed BatchGetItemCommandInput.
  */
 export function buildValidatedBatchGetCommand(input: CustomBatchGetCmdInput): BatchGetItemCommandInput {
-  const validatedInput = customBatchGetCmdInputSch.parse(input);
-  const requestItems: NonNullable<BatchGetItemCommandInput['RequestItems']> = {};
+  try {
+    const validatedInput = customBatchGetCmdInputSch.parse(input);
+    const requestItems: NonNullable<BatchGetItemCommandInput['RequestItems']> = {};
 
-  for (const table of validatedInput.tables) {
-    const firstKey = table.keys[0];
+    for (const table of validatedInput.tables) {
+      const firstKey = table.keys[0];
 
-    if (!firstKey) {
-      throw new Error(`No keys provided for table "${table.tableName}".`);
-    }
-
-    const keyNames = Object.keys(firstKey).sort();
-
-    if (keyNames.length < 1 || keyNames.length > 2) {
-      throw new Error(`Keys for table "${table.tableName}" must contain one or two attributes.`);
-    }
-
-    const seenKeys = new Set<string>();
-
-    const keys = table.keys.map((key, keyIndex) => {
-      const currentKeyNames = Object.keys(key).sort();
-
-      const hasSameKeyStructure =
-        currentKeyNames.length === keyNames.length &&
-        currentKeyNames.every((keyName, index) => keyName === keyNames[index]);
-
-      if (!hasSameKeyStructure) {
-        throw new Error(
-          `Key at index ${keyIndex} for table "${table.tableName}" ` +
-            'does not have the same primary-key attributes as the other keys.'
-        );
+      if (!firstKey) {
+        throw new Error(`No keys provided for table "${table.tableName}".`);
       }
 
-      for (const keyName of keyNames) {
-        if (typeof key[keyName] !== typeof firstKey[keyName]) {
+      const keyNames = Object.keys(firstKey).sort();
+
+      if (keyNames.length < 1 || keyNames.length > 2) {
+        throw new Error(`Keys for table "${table.tableName}" must contain one or two attributes.`);
+      }
+
+      const seenKeys = new Set<string>();
+
+      const keys = table.keys.map((key, keyIndex) => {
+        const currentKeyNames = Object.keys(key).sort();
+
+        const hasSameKeyStructure =
+          currentKeyNames.length === keyNames.length &&
+          currentKeyNames.every((keyName, index) => keyName === keyNames[index]);
+
+        if (!hasSameKeyStructure) {
           throw new Error(
-            `Key attribute "${keyName}" has inconsistent value types ` + `in table "${table.tableName}".`
+            `Key at index ${keyIndex} for table "${table.tableName}" ` +
+              'does not have the same primary-key attributes as the other keys.'
           );
         }
-      }
 
-      const signature = JSON.stringify(keyNames.map((keyName) => [keyName, typeof key[keyName], key[keyName]]));
+        for (const keyName of keyNames) {
+          if (typeof key[keyName] !== typeof firstKey[keyName]) {
+            throw new Error(
+              `Key attribute "${keyName}" has inconsistent value types ` + `in table "${table.tableName}".`
+            );
+          }
+        }
 
-      if (seenKeys.has(signature)) {
-        throw new Error(`Duplicate key found for table "${table.tableName}".`);
-      }
+        const signature = JSON.stringify(keyNames.map((keyName) => [keyName, typeof key[keyName], key[keyName]]));
 
-      seenKeys.add(signature);
+        if (seenKeys.has(signature)) {
+          throw new Error(`Duplicate key found for table "${table.tableName}".`);
+        }
 
-      return Object.fromEntries(
-        Object.entries(key).map(([attributeName, value]): [string, AttributeValue] => [
-          attributeName,
-          typeof value === 'string' ? { S: value } : { N: String(value) },
-        ])
-      );
-    });
+        seenKeys.add(signature);
 
-    /*
-     * Include primary-key attributes because BatchGetItem does not
-     * guarantee response order. The caller needs keys to match results
-     * with requested items.
-     */
-    const projectedAttributes = table.attributes ? [...new Set([...keyNames, ...table.attributes])] : undefined;
+        return Object.fromEntries(
+          Object.entries(key).map(([attributeName, value]): [string, AttributeValue] => [
+            attributeName,
+            typeof value === 'string' ? { S: value } : { N: String(value) },
+          ])
+        );
+      });
 
-    const expressionAttributeNames = projectedAttributes
-      ? Object.fromEntries(projectedAttributes.map((attributeName, index) => [`#attr${index}`, attributeName]))
-      : undefined;
+      const projectedAttributes = table.attributes ? [...new Set([...keyNames, ...table.attributes])] : undefined;
 
-    const projectionExpression = projectedAttributes?.map((_, index) => `#attr${index}`).join(', ');
+      const expressionAttributeNames = projectedAttributes
+        ? Object.fromEntries(projectedAttributes.map((attributeName, index) => [`#attr${index}`, attributeName]))
+        : undefined;
 
-    requestItems[table.tableName] = {
-      Keys: keys,
-      ConsistentRead: table.consistentRead,
+      const projectionExpression = projectedAttributes?.map((_, index) => `#attr${index}`).join(', ');
 
-      ...(projectionExpression && {
-        ProjectionExpression: projectionExpression,
-        ExpressionAttributeNames: expressionAttributeNames,
-      }),
+      requestItems[table.tableName] = {
+        Keys: keys,
+        ConsistentRead: table.consistentRead,
+
+        ...(projectionExpression && {
+          ProjectionExpression: projectionExpression,
+          ExpressionAttributeNames: expressionAttributeNames,
+        }),
+      };
+    }
+
+    return {
+      RequestItems: requestItems,
+      ReturnConsumedCapacity: validatedInput.returnConsumedCapacity,
     };
+  } catch (error: unknown) {
+    console.error(`Failed on buildValidatedBatchGetCommandInput: ${error}`);
+    throw error;
   }
-
-  return {
-    RequestItems: requestItems,
-    ReturnConsumedCapacity: validatedInput.returnConsumedCapacity,
-  };
 }

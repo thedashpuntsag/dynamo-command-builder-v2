@@ -15,23 +15,28 @@ import { DeleteItemCommandInput } from '@aws-sdk/client-dynamodb';
  * @returns Validated DynamoDB DeleteItem command input.
  */
 export function buildValidatedDeleteCommandInput(input: unknown): DeleteItemCommandInput {
-  const validatedInput = customDeleteCmdInputSch.parse(input);
+  try {
+    const validatedInput = customDeleteCmdInputSch.parse(input);
 
-  return {
-    TableName: validatedInput.tableName,
-    Key: marshall(validatedInput.key),
-    ReturnValues: validatedInput.returnValues,
-    ReturnValuesOnConditionCheckFailure: validatedInput.returnValuesOnConditionCheckFailure,
-    ReturnConsumedCapacity: validatedInput.returnConsumedCapacity,
-    ReturnItemCollectionMetrics: validatedInput.returnItemCollectionMetrics,
-    ...(validatedInput.conditionExpression && {
-      ConditionExpression: validatedInput.conditionExpression,
-    }),
-    ...(validatedInput.expressionAttributeNames && {
-      ExpressionAttributeNames: validatedInput.expressionAttributeNames,
-    }),
-    ...(validatedInput.expressionAttributeValues && {
-      ExpressionAttributeValues: marshall(validatedInput.expressionAttributeValues),
-    }),
-  };
+    return {
+      TableName: validatedInput.tableName,
+      Key: marshall(validatedInput.key),
+      ReturnValues: validatedInput.returnValues,
+      ReturnValuesOnConditionCheckFailure: validatedInput.returnValuesOnConditionCheckFailure,
+      ReturnConsumedCapacity: validatedInput.returnConsumedCapacity,
+      ReturnItemCollectionMetrics: validatedInput.returnItemCollectionMetrics,
+      ...(validatedInput.conditionExpression && {
+        ConditionExpression: validatedInput.conditionExpression,
+      }),
+      ...(validatedInput.expressionAttributeNames && {
+        ExpressionAttributeNames: validatedInput.expressionAttributeNames,
+      }),
+      ...(validatedInput.expressionAttributeValues && {
+        ExpressionAttributeValues: marshall(validatedInput.expressionAttributeValues),
+      }),
+    };
+  } catch (error: unknown) {
+    console.error(`Failed on buildValidatedDeleteCommandInput: ${error}`);
+    throw error;
+  }
 }

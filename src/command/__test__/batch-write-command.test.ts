@@ -254,7 +254,7 @@ describe('buildValidatedBatchWriteCommandInput', () => {
       buildValidatedBatchWriteCommandInput({
         tables: [usersTable([{ operation: 'PUT', item: { userId: 'user-1', unsupported: undefined } }])],
       })
-    ).toThrow('Unsupported value type for DynamoDB marshalling.');
+    ).toThrow('Unsupported DynamoDB value: undefined');
   });
 
   it.each([
