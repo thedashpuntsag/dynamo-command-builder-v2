@@ -1,6 +1,6 @@
 import { CustomGetCmdInput, customGetCmdInputSch } from '@/types';
 import { marshall } from '@/utils/marshall';
-import { replaceReservedKeywordsFromProjection, RESERVED_KEYWORDS_SET } from '@/utils/reserved-keywords';
+import { RESERVED_KEYWORDS_SET } from '@/utils/reserved-keywords';
 import { GetItemCommandInput } from '@aws-sdk/client-dynamodb';
 
 /**
@@ -13,15 +13,21 @@ import { GetItemCommandInput } from '@aws-sdk/client-dynamodb';
  * Both forms are merged when provided. Structured paths receive generated aliases, and
  * reserved keywords in raw projection paths are aliased automatically.
  *
+ * Defaults and constraints enforced by {@link customGetCmdInputSch}:
+ * - `consistentRead` defaults to `false` when not provided.
+ * - `expressionAttributeNames` is only accepted alongside a `projectionExpression`.
+ * - Invalid input (per the schema) causes this function to throw a `ZodError`.
+ *
  * ### Process Flow:
  * 1. Validate the input against the get-command schema.
  * 2. Marshall the key and construct the base `GetItemCommandInput`.
- * 3. Process the raw projection expression, replacing reserved keywords with aliases.
+ * 3. Process the raw projection expression, aliasing reserved keywords in a single pass.
  * 4. Convert structured attribute paths into aliased DynamoDB projection paths.
  * 5. Merge projection parts and attach expression attribute names when needed.
  *
- * @param input The get-item request to validate and build.
+ * @param input The get-item request ({@link CustomGetCmdInput}) to validate and build.
  * @returns A validated DynamoDB `GetItemCommandInput`.
+ * @throws If `input` fails schema validation.
  */
 export function buildValidatedGetCommand(input: CustomGetCmdInput): GetItemCommandInput {
   try {
@@ -39,23 +45,24 @@ export function buildValidatedGetCommand(input: CustomGetCmdInput): GetItemComma
       ...(parsed.expressionAttributeNames ?? {}),
     };
 
-    // Process the raw projection expression, replacing reserved keywords with aliases.
+    // Process the raw projection expression, aliasing reserved keywords in a single regex pass
+    // per part instead of matching once to detect reserved attributes and again to replace them.
     if (parsed.projectionExpression) {
       const rawProjectionParts = parsed.projectionExpression.split(',').map((part) => part.trim());
 
-      rawProjectionParts.forEach((projectionPart) => {
-        const reservedAttributes = projectionPart.match(/(?:^|\.)(?!#)([^.[\]]+)/g) ?? [];
-
-        reservedAttributes.forEach((attribute) => {
-          const attributeName = attribute.replace(/^\./, '');
-
-          if (RESERVED_KEYWORDS_SET.has(attributeName.toUpperCase())) {
-            expressionAttributeNames[`#${attributeName}`] = attributeName;
+      const aliasedProjectionParts = rawProjectionParts.map((projectionPart) =>
+        projectionPart.replace(/(^|\.)(?!#)([^.[\]]+)/g, (match, separator: string, attributeName: string) => {
+          if (!RESERVED_KEYWORDS_SET.has(attributeName.toUpperCase())) {
+            return match;
           }
-        });
-      });
 
-      projectionParts.push(replaceReservedKeywordsFromProjection(parsed.projectionExpression));
+          expressionAttributeNames[`#${attributeName}`] = attributeName;
+
+          return `${separator}#${attributeName}`;
+        })
+      );
+
+      projectionParts.push(aliasedProjectionParts.join(', '));
     }
 
     // Process structured attribute paths, generating aliases and building projection tokens.
