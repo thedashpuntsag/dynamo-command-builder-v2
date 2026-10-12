@@ -1,5 +1,5 @@
 import { GenericRecord } from '@/types';
-import { QueryCommandInput } from '@aws-sdk/client-dynamodb';
+import { QueryCommandInput } from '@aws-sdk/lib-dynamodb';
 
 /**
  *

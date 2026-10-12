@@ -1,12 +1,10 @@
 /**
- * Extracts expression attribute names from a projection string.
+ * Extracts expression attribute names from a DynamoDB expression.
  *
  * ### Process flow:
- * 1. Split the projection string by commas to get individual attribute names.
- * 2. Trim whitespace from each attribute name.
- * 3. Check if the attribute name starts with '#'.
- * 4. If it does, add an entry to the result object mapping the attribute name to its unprefixed version.
- * 5. Return the resulting record of expression attribute names.
+ * 1. Find each expression attribute-name token beginning with `#`.
+ * 2. Add an entry mapping each token to its unprefixed name.
+ * 3. Return the resulting record of expression attribute names.
  *
  * @param {string} expression - The projection expression string.
  * @returns {Record<string, string>} - A record of expression attribute names.
@@ -14,11 +12,8 @@
 export function extractExpAttributeNamesFromExpression(expression: string): Record<string, string> {
   const result: Record<string, string> = {};
 
-  for (const raw of expression.split(',')) {
-    const attr = raw.trim();
-    if (attr.startsWith('#')) {
-      result[attr] = attr.slice(1);
-    }
+  for (const [token] of expression.matchAll(/#[A-Za-z0-9_]+/g)) {
+    result[token] = token.slice(1);
   }
 
   return result;

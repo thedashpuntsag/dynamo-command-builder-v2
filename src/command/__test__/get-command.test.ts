@@ -11,7 +11,7 @@ describe('buildValidatedGetCommand', () => {
   it('builds a command with a simple string partition key and default options', () => {
     expect(build({ tableName: 'Users', key: { userId: 'user-1' } })).toEqual({
       TableName: 'Users',
-      Key: { userId: { S: 'user-1' } },
+      Key: { userId: 'user-1' },
       ConsistentRead: false,
       ReturnConsumedCapacity: undefined,
     });
@@ -19,13 +19,13 @@ describe('buildValidatedGetCommand', () => {
 
   it('supports a composite partition key and numeric sort key', () => {
     expect(build({ tableName: 'Orders', key: { customerId: 'customer-1', orderNumber: 7 } }).Key).toEqual({
-      customerId: { S: 'customer-1' },
-      orderNumber: { N: '7' },
+      customerId: 'customer-1',
+      orderNumber: 7,
     });
   });
 
   it('converts a numeric partition key to a DynamoDB attribute', () => {
-    expect(build({ tableName: 'Orders', key: { orderId: 42 } }).Key).toEqual({ orderId: { N: '42' } });
+    expect(build({ tableName: 'Orders', key: { orderId: 42 } }).Key).toEqual({ orderId: 42 });
   });
 
   it('supports decimal, bigint, and binary key values', () => {
@@ -35,12 +35,12 @@ describe('buildValidatedGetCommand', () => {
         key: { decimalId: 12.5, binaryId: new Uint8Array([1, 2]) },
       }).Key
     ).toEqual({
-      decimalId: { N: '12.5' },
-      binaryId: { B: new Uint8Array([1, 2]) },
+      decimalId: 12.5,
+      binaryId: new Uint8Array([1, 2]),
     });
 
     expect(build({ tableName: 'Accounts', key: { accountId: 9007199254740993n } }).Key).toEqual({
-      accountId: { N: '9007199254740993' },
+      accountId: 9007199254740993n,
     });
   });
 

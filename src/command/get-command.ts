@@ -1,10 +1,9 @@
 import { CustomGetCmdInput, customGetCmdInputSch } from '@/types';
-import { marshall } from '@/utils/marshall';
 import { RESERVED_KEYWORDS_SET } from '@/utils/reserved-keywords';
-import { GetItemCommandInput } from '@aws-sdk/client-dynamodb';
+import { GetCommandInput } from '@aws-sdk/lib-dynamodb';
 
 /**
- * Validates input and builds an AWS SDK `GetItemCommandInput`.
+ * Validates input and builds an AWS SDK DocumentClient `GetCommandInput`.
  *
  * Projection fields can be supplied in either or both forms:
  * - `projectionExpression` accepts a raw DynamoDB projection expression and optional aliases.
@@ -16,39 +15,47 @@ import { GetItemCommandInput } from '@aws-sdk/client-dynamodb';
  * Defaults and constraints enforced by {@link customGetCmdInputSch}:
  * - `consistentRead` defaults to `false` when not provided.
  * - `expressionAttributeNames` is only accepted alongside a `projectionExpression`.
- * - Invalid input (per the schema) causes this function to throw a `ZodError`.
+ * - Invalid input causes this function to throw a `ZodError`.
  *
  * ### Process Flow:
  * 1. Validate the input against the get-command schema.
- * 2. Marshall the key and construct the base `GetItemCommandInput`.
- * 3. Process the raw projection expression, aliasing reserved keywords in a single pass.
- * 4. Convert structured attribute paths into aliased DynamoDB projection paths.
- * 5. Merge projection parts and attach expression attribute names when needed.
+ * 2. Construct the base DocumentClient `GetCommandInput`.
+ * 3. Process the raw projection expression and alias reserved keywords.
+ * 4. Validate generated aliases against caller-provided aliases.
+ * 5. Convert structured attribute paths into aliased DynamoDB projection paths.
+ * 6. Merge projection parts and attach expression attribute names when needed.
  *
- * @param input The get-item request ({@link CustomGetCmdInput}) to validate and build.
- * @returns A validated DynamoDB `GetItemCommandInput`.
- * @throws If `input` fails schema validation.
+ * ### Notes:
+ * - This builder uses `GetCommandInput` from `@aws-sdk/lib-dynamodb`.
+ * - `Key` remains a native JavaScript object and is not manually marshalled.
+ * - This function only constructs command input and does not execute an AWS request.
+ *
+ * @param input The get-item request to validate and build.
+ * @returns A validated DynamoDB DocumentClient `GetCommandInput`.
+ * @throws If `input` fails schema validation or an expression alias conflicts.
  */
-export function buildValidatedGetCommand(input: CustomGetCmdInput): GetItemCommandInput {
+export function buildValidatedGetCommand(input: CustomGetCmdInput): GetCommandInput {
   try {
     const parsed = customGetCmdInputSch.parse(input);
 
-    const commandInput: GetItemCommandInput = {
+    const commandInput: GetCommandInput = {
       TableName: parsed.tableName,
-      Key: marshall(parsed.key),
+      Key: parsed.key,
       ConsistentRead: parsed.consistentRead,
       ReturnConsumedCapacity: parsed.returnConsumedCapacity,
     };
 
     const projectionParts: string[] = [];
+
     const expressionAttributeNames: Record<string, string> = {
       ...(parsed.expressionAttributeNames ?? {}),
     };
 
-    // Process the raw projection expression, aliasing reserved keywords in a single regex pass
-    // per part instead of matching once to detect reserved attributes and again to replace them.
     if (parsed.projectionExpression) {
-      const rawProjectionParts = parsed.projectionExpression.split(',').map((part) => part.trim());
+      const rawProjectionParts = parsed.projectionExpression
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
 
       const aliasedProjectionParts = rawProjectionParts.map((projectionPart) =>
         projectionPart.replace(/(^|\.)(?!#)([^.[\]]+)/g, (match, separator: string, attributeName: string) => {
@@ -56,16 +63,24 @@ export function buildValidatedGetCommand(input: CustomGetCmdInput): GetItemComma
             return match;
           }
 
-          expressionAttributeNames[`#${attributeName}`] = attributeName;
+          const token = `#${attributeName}`;
+          const existingMapping = expressionAttributeNames[token];
 
-          return `${separator}#${attributeName}`;
+          if (existingMapping !== undefined && existingMapping !== attributeName) {
+            throw new Error(
+              `Expression attribute name token "${token}" conflicts with existing mapping "${existingMapping}".`
+            );
+          }
+
+          expressionAttributeNames[token] = attributeName;
+
+          return `${separator}${token}`;
         })
       );
 
-      projectionParts.push(aliasedProjectionParts.join(', '));
+      projectionParts.push(...aliasedProjectionParts);
     }
 
-    // Process structured attribute paths, generating aliases and building projection tokens.
     if (parsed.attributes) {
       const attributeNameTokens = new Map<string, string>();
       let nextTokenIndex = 0;
@@ -106,7 +121,6 @@ export function buildValidatedGetCommand(input: CustomGetCmdInput): GetItemComma
       projectionParts.push(...projectionTokens);
     }
 
-    // Attach the projection expression and attribute names to the command input if any projection parts exist.
     if (projectionParts.length > 0) {
       commandInput.ProjectionExpression = projectionParts.join(', ');
 
@@ -117,7 +131,7 @@ export function buildValidatedGetCommand(input: CustomGetCmdInput): GetItemComma
 
     return commandInput;
   } catch (error: unknown) {
-    console.error(`Failed on buildValidatedGetCommand: ${error}`);
+    console.error('Failed on buildValidatedGetCommand:', error);
     throw error;
   }
 }

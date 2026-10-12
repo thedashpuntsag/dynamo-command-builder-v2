@@ -281,16 +281,38 @@ export const customGetCmdInputSch = z
 export type CustomGetCmdInput = z.infer<typeof customGetCmdInputSch>;
 
 // --------------------------------------- Put command schemas ---------------------------------------------------------
-export const customPutCmdInputSch = z.object({
-  tableName: z.string(),
-  item: genericRecordSch,
-  conditionExpression: optStringSch,
-  expressionAttributeNames: stringRecordSch.optional(),
-  expressionAttributeValues: genericRecordSch.optional(),
-  returnValues: returnValuesOptionsSch.optional(),
-  returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
-  returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.optional(),
-});
+export const customPutCmdInputSch = z
+  .object({
+    tableName: z.string().trim().min(1),
+    item: genericRecordSch,
+    conditionExpression: optStringSch,
+    expressionAttributeNames: stringRecordSch.optional(),
+    expressionAttributeValues: genericRecordSch.optional(),
+    returnValues: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
+    returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.default('NONE'),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    const hasCondition = Boolean(input.conditionExpression);
+
+    if (!hasCondition && input.expressionAttributeNames) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expressionAttributeNames'],
+        message: 'expressionAttributeNames requires conditionExpression.',
+      });
+    }
+
+    if (!hasCondition && input.expressionAttributeValues) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expressionAttributeValues'],
+        message: 'expressionAttributeValues requires conditionExpression.',
+      });
+    }
+  });
+
 export type CustomPutCmdInput = z.infer<typeof customPutCmdInputSch>;
 
 // --------------------------------------- Query command schemas -------------------------------------------------------
