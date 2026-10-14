@@ -16,7 +16,7 @@ describe('buildValidatedBatchGetCommand', () => {
     ).toEqual({
       RequestItems: {
         Users: {
-          Keys: [{ userId: { S: 'user-1' } }],
+          Keys: [{ userId: 'user-1' }],
           ConsistentRead: false,
         },
       },
@@ -29,7 +29,7 @@ describe('buildValidatedBatchGetCommand', () => {
       tables: [{ tableName: 'Users', keys: [{ userId: 'user-1' }, { userId: 'user-2' }] }],
     });
 
-    expect(command.RequestItems?.Users?.Keys).toEqual([{ userId: { S: 'user-1' } }, { userId: { S: 'user-2' } }]);
+    expect(command.RequestItems?.Users?.Keys).toEqual([{ userId: 'user-1' }, { userId: 'user-2' }]);
   });
 
   it('builds a command for multiple tables', () => {
@@ -42,11 +42,11 @@ describe('buildValidatedBatchGetCommand', () => {
 
     expect(command.RequestItems).toEqual({
       Users: {
-        Keys: [{ userId: { S: 'user-1' } }],
+        Keys: [{ userId: 'user-1' }],
         ConsistentRead: false,
       },
       Orders: {
-        Keys: [{ orderId: { N: '42' } }],
+        Keys: [{ orderId: 42 }],
         ConsistentRead: false,
       },
     });
@@ -64,8 +64,8 @@ describe('buildValidatedBatchGetCommand', () => {
 
     expect(command.RequestItems?.Orders?.Keys).toEqual([
       {
-        customerId: { S: 'customer-1' },
-        orderNumber: { N: '7' },
+        customerId: 'customer-1',
+        orderNumber: 7,
       },
     ]);
   });
@@ -76,8 +76,8 @@ describe('buildValidatedBatchGetCommand', () => {
     });
 
     expect(command.RequestItems?.Orders?.Keys?.[0]).toEqual({
-      tenant: { S: 'acme' },
-      sequence: { N: '-12' },
+      tenant: 'acme',
+      sequence: -12,
     });
   });
 
@@ -118,7 +118,7 @@ describe('buildValidatedBatchGetCommand', () => {
     });
 
     expect(command.RequestItems?.Orders).toEqual({
-      Keys: [{ orderId: { N: '1' }, tenantId: { S: 'tenant-1' } }],
+      Keys: [{ orderId: 1, tenantId: `tenant-1` }],
       ConsistentRead: false,
       ProjectionExpression: '#attr0, #attr1, #attr2, #attr3',
       ExpressionAttributeNames: {

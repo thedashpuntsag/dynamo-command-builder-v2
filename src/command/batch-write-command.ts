@@ -1,12 +1,25 @@
-import { marshall } from '@/utils/marshall';
-import type { BatchWriteItemCommandInput } from '@aws-sdk/client-dynamodb';
+import type { BatchWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import { customBatchWriteCmdInputSch } from '../types';
+import { marshall } from '../utils';
 
 type KeySchema = {
   partitionKey: string;
   sortKey?: string | undefined;
 };
-
+/**
+ * Extracts the primary key from a record based on the provided key schema.
+ *
+ * ### Process flow:
+ * 1. Determine the key names based on the key schema.
+ * 2. If extra attributes are not allowed, check that the record contains exactly the key attributes.
+ * 3. Validate that each key attribute is present and has a valid type (string or finite number).
+ * 4. Construct and return the primary key object.
+ *
+ * @param record The record from which to extract the primary key.
+ * @param keySchema The key schema defining the partition and sort keys.
+ * @param shouldRejectExtraAttributes Whether to reject records with extra attributes beyond the key schema.
+ * @returns The extracted primary key as an object.
+ */
 function getItemKey(
   record: Record<string, unknown>,
   keySchema: KeySchema,
@@ -49,6 +62,12 @@ function getItemKey(
   );
 }
 
+/**
+ * Creates a unique signature for a primary key, used to detect duplicate operations.
+ *
+ * @param key The primary key object.
+ * @returns A string representing the unique signature of the key.
+ */
 function createKeySignature(key: Record<string, unknown>): string {
   return JSON.stringify(
     Object.entries(key)
@@ -64,17 +83,17 @@ function createKeySignature(key: Record<string, unknown>): string {
  * 1. Validate tables and operations.
  * 2. Validate each item's primary key.
  * 3. Reject multiple operations targeting the same item.
- * 4. Marshall native JavaScript records into DynamoDB attributes.
- * 5. Construct the BatchWriteItem command input.
+ * 4. Build native JavaScript write requests.
+ * 5. Construct the BatchWriteCommand input.
  *
  * @param input Untrusted custom batch-write input.
- * @returns Validated DynamoDB BatchWriteItem command input.
+ * @returns Validated DynamoDB BatchWriteCommandInput.
  */
-export function buildValidatedBatchWriteCommandInput(input: unknown): BatchWriteItemCommandInput {
+export function buildValidatedBatchWriteCommandInput(input: unknown): BatchWriteCommandInput {
   try {
     const validatedInput = customBatchWriteCmdInputSch.parse(input);
 
-    const requestItems: NonNullable<BatchWriteItemCommandInput['RequestItems']> = {};
+    const requestItems: NonNullable<BatchWriteCommandInput['RequestItems']> = {};
 
     for (const table of validatedInput.tables) {
       const targetedKeys = new Set<string>();
@@ -83,7 +102,9 @@ export function buildValidatedBatchWriteCommandInput(input: unknown): BatchWrite
         const sourceRecord = write.operation === 'PUT' ? write.item : write.key;
 
         const key = getItemKey(sourceRecord, table.keySchema, write.operation === 'DELETE');
+
         const keySignature = createKeySignature(key);
+
         if (targetedKeys.has(keySignature)) {
           throw new Error(`Multiple operations target the same item in table "${table.tableName}".`);
         }
@@ -91,16 +112,21 @@ export function buildValidatedBatchWriteCommandInput(input: unknown): BatchWrite
         targetedKeys.add(keySignature);
 
         if (write.operation === 'PUT') {
+          // BatchWriteCommand accepts native values, but marshalling here ensures
+          // unsupported values fail during command construction instead of later
+          // when the AWS SDK sends the request.
+          marshall(write.item);
+
           return {
             PutRequest: {
-              Item: marshall(write.item),
+              Item: write.item,
             },
           };
         }
 
         return {
           DeleteRequest: {
-            Key: marshall(key),
+            Key: key,
           },
         };
       });
@@ -112,7 +138,7 @@ export function buildValidatedBatchWriteCommandInput(input: unknown): BatchWrite
       ReturnItemCollectionMetrics: validatedInput.returnItemCollectionMetrics,
     };
   } catch (error: unknown) {
-    console.error(`Failed on buildValidatedBatchWriteCommandInput: ${error}`);
+    console.error('Failed on buildValidatedBatchWriteCommandInput:', error);
     throw error;
   }
 }

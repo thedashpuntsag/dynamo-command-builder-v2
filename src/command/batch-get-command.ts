@@ -1,5 +1,5 @@
 import { CustomBatchGetCmdInput, customBatchGetCmdInputSch } from '@/types';
-import { AttributeValue, BatchGetItemCommandInput } from '@aws-sdk/client-dynamodb';
+import { BatchGetCommandInput } from '@aws-sdk/lib-dynamodb';
 
 /**
  * Validates custom batch-get input and constructs DynamoDB command input.
@@ -8,16 +8,15 @@ import { AttributeValue, BatchGetItemCommandInput } from '@aws-sdk/client-dynamo
  * 1. Validate the request structure.
  * 2. Validate key consistency for every table.
  * 3. Reject duplicate keys.
- * 4. Convert native key values into DynamoDB AttributeValue objects.
- * 5. Build the RequestItems map.
+ * 4. Build the RequestItems map using native JavaScript values.
  *
  * @param input The untrusted input to validate.
- * @returns The constructed BatchGetItemCommandInput.
+ * @returns The constructed BatchGetCommandInput.
  */
-export function buildValidatedBatchGetCommand(input: CustomBatchGetCmdInput): BatchGetItemCommandInput {
+export function buildValidatedBatchGetCommand(input: CustomBatchGetCmdInput): BatchGetCommandInput {
   try {
     const validatedInput = customBatchGetCmdInputSch.parse(input);
-    const requestItems: NonNullable<BatchGetItemCommandInput['RequestItems']> = {};
+    const requestItems: NonNullable<BatchGetCommandInput['RequestItems']> = {};
 
     for (const table of validatedInput.tables) {
       const firstKey = table.keys[0];
@@ -34,12 +33,12 @@ export function buildValidatedBatchGetCommand(input: CustomBatchGetCmdInput): Ba
 
       const seenKeys = new Set<string>();
 
-      const keys = table.keys.map((key, keyIndex) => {
+      for (const [keyIndex, key] of table.keys.entries()) {
         const currentKeyNames = Object.keys(key).sort();
 
         const hasSameKeyStructure =
           currentKeyNames.length === keyNames.length &&
-          currentKeyNames.every((keyName, index) => keyName === keyNames[index]);
+          currentKeyNames.every((name, index) => name === keyNames[index]);
 
         if (!hasSameKeyStructure) {
           throw new Error(
@@ -63,25 +62,18 @@ export function buildValidatedBatchGetCommand(input: CustomBatchGetCmdInput): Ba
         }
 
         seenKeys.add(signature);
-
-        return Object.fromEntries(
-          Object.entries(key).map(([attributeName, value]): [string, AttributeValue] => [
-            attributeName,
-            typeof value === 'string' ? { S: value } : { N: String(value) },
-          ])
-        );
-      });
+      }
 
       const projectedAttributes = table.attributes ? [...new Set([...keyNames, ...table.attributes])] : undefined;
 
       const expressionAttributeNames = projectedAttributes
-        ? Object.fromEntries(projectedAttributes.map((attributeName, index) => [`#attr${index}`, attributeName]))
+        ? Object.fromEntries(projectedAttributes.map((name, index) => [`#attr${index}`, name]))
         : undefined;
 
       const projectionExpression = projectedAttributes?.map((_, index) => `#attr${index}`).join(', ');
 
       requestItems[table.tableName] = {
-        Keys: keys,
+        Keys: table.keys,
         ConsistentRead: table.consistentRead,
 
         ...(projectionExpression && {
@@ -96,7 +88,7 @@ export function buildValidatedBatchGetCommand(input: CustomBatchGetCmdInput): Ba
       ReturnConsumedCapacity: validatedInput.returnConsumedCapacity,
     };
   } catch (error: unknown) {
-    console.error(`Failed on buildValidatedBatchGetCommandInput: ${error}`);
+    console.error('Failed on buildValidatedBatchGetCommandInput:', error);
     throw error;
   }
 }

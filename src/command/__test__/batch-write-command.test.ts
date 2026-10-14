@@ -19,7 +19,7 @@ describe('buildValidatedBatchWriteCommandInput', () => {
       })
     ).toEqual({
       RequestItems: {
-        Users: [{ PutRequest: { Item: { userId: { S: 'user-1' }, name: { S: 'Ada' } } } }],
+        Users: [{ PutRequest: { Item: { userId: 'user-1', name: 'Ada' } } }],
       },
       ReturnConsumedCapacity: 'NONE',
       ReturnItemCollectionMetrics: 'NONE',
@@ -29,7 +29,7 @@ describe('buildValidatedBatchWriteCommandInput', () => {
   it('builds a delete request and converts a numeric key', () => {
     const command = buildValidatedBatchWriteCommandInput({ tables: [usersTable([deleteOperation(42)])] });
 
-    expect(command.RequestItems?.Users).toEqual([{ DeleteRequest: { Key: { userId: { N: '42' } } } }]);
+    expect(command.RequestItems?.Users).toEqual([{ DeleteRequest: { Key: { userId: 42 } } }]);
   });
 
   it('builds multiple operations for one table in input order', () => {
@@ -44,9 +44,9 @@ describe('buildValidatedBatchWriteCommandInput', () => {
     });
 
     expect(command.RequestItems?.Users).toEqual([
-      { PutRequest: { Item: { userId: { S: 'user-1' }, active: { BOOL: true } } } },
-      { PutRequest: { Item: { userId: { S: 'user-2' }, active: { BOOL: false } } } },
-      { DeleteRequest: { Key: { userId: { S: 'user-3' } } } },
+      { PutRequest: { Item: { userId: 'user-1', active: true } } },
+      { PutRequest: { Item: { userId: 'user-2', active: false } } },
+      { DeleteRequest: { Key: { userId: 'user-3' } } },
     ]);
   });
 
@@ -63,8 +63,8 @@ describe('buildValidatedBatchWriteCommandInput', () => {
     });
 
     expect(command.RequestItems).toEqual({
-      Users: [{ PutRequest: { Item: { userId: { S: 'user-1' } } } }],
-      Orders: [{ DeleteRequest: { Key: { orderId: { N: '7' } } } }],
+      Users: [{ PutRequest: { Item: { userId: 'user-1' } } }],
+      Orders: [{ DeleteRequest: { Key: { orderId: 7 } } }],
     });
   });
 
@@ -80,7 +80,7 @@ describe('buildValidatedBatchWriteCommandInput', () => {
     });
 
     expect(command.RequestItems?.Orders?.[0]).toEqual({
-      DeleteRequest: { Key: { accountId: { S: 'account-1' }, orderId: { N: '42' } } },
+      DeleteRequest: { Key: { accountId: 'account-1', orderId: 42 } },
     });
   });
 
@@ -104,12 +104,12 @@ describe('buildValidatedBatchWriteCommandInput', () => {
     });
 
     expect(command.RequestItems?.Users?.[0]?.PutRequest?.Item).toEqual({
-      userId: { S: 'user-1' },
-      score: { N: '12.5' },
-      active: { BOOL: true },
-      deletedAt: { NULL: true },
-      tags: { L: [{ S: 'admin' }, { N: '2' }] },
-      profile: { M: { city: { S: 'Ulaanbaatar' }, verified: { BOOL: false } } },
+      userId: 'user-1',
+      score: 12.5,
+      active: true,
+      deletedAt: null,
+      tags: ['admin', 2],
+      profile: { city: 'Ulaanbaatar', verified: false },
     });
   });
 
@@ -118,7 +118,7 @@ describe('buildValidatedBatchWriteCommandInput', () => {
       tables: [usersTable([{ operation: 'PUT', item: { userId: 'user-1', name: 'Ada' } }])],
     });
 
-    expect(command.RequestItems?.Users?.[0]?.PutRequest?.Item).toHaveProperty('name', { S: 'Ada' });
+    expect(command.RequestItems?.Users?.[0]?.PutRequest?.Item).toHaveProperty('name', 'Ada');
   });
 
   it('applies default response options', () => {
