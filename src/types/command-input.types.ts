@@ -149,13 +149,20 @@ export const customBatchWriteCmdInputSch = z
 export type CustomBatchWriteCmdInput = z.infer<typeof customBatchWriteCmdInputSch>;
 
 // --------------------------------------- Delete command schemas ------------------------------------------------------
+const definedExpressionValuesSch = z.record(
+  z.string(),
+  z.unknown().refine((value) => value !== undefined, {
+    message: 'Expression attribute values must not be undefined.',
+  })
+);
+
 export const customDeleteCmdInputSch = z
   .object({
     tableName: z.string(),
     key: deleteKeySch,
     conditionExpression: z.string().trim().min(1).optional(),
     expressionAttributeNames: stringRecordSch.optional(),
-    expressionAttributeValues: genericRecordSch.optional(),
+    expressionAttributeValues: definedExpressionValuesSch.optional(),
     returnValues: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
     returnValuesOnConditionCheckFailure: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
     returnConsumedCapacity: z.enum(['NONE', 'TOTAL', 'INDEXES']).default('NONE'),
