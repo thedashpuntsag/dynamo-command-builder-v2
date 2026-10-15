@@ -48,7 +48,7 @@ export function buildValidatedGetCommand(input: CustomGetCmdInput): GetCommandIn
     const projectionParts: string[] = [];
 
     const expressionAttributeNames: Record<string, string> = {
-      ...(parsed.expressionAttributeNames ?? {}),
+      ...parsed.expressionAttributeNames,
     };
 
     if (parsed.projectionExpression) {

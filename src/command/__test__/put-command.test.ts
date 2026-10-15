@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import { CustomPutCmdInput } from '../../types/command-input.types';
 import { buildValidatedPutCommand } from '../put-command';

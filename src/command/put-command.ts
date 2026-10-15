@@ -47,7 +47,7 @@ export function buildValidatedPutCommand(input: CustomPutCmdInput): PutCommandIn
 
     const expressionAttributeNames = {
       ...generatedExpressionAttributeNames,
-      ...(parsed.expressionAttributeNames ?? {}),
+      ...parsed.expressionAttributeNames,
     };
 
     if (Object.keys(expressionAttributeNames).length > 0) {

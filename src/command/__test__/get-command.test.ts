@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import { customGetCmdInputSch } from '../../types/command-input.types';
 import { buildValidatedGetCommand } from '../get-command';

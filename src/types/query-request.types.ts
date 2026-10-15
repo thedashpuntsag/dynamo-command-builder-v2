@@ -364,8 +364,8 @@ function validateFilterParams(params: GenericRecord, ctx: z.RefinementCtx): void
     const prefix = `filterAttr${position}`;
 
     const name = params[`${prefix}Name`];
-    const condition = params[`${prefix}Condition`];
-    const valueType = params[`${prefix}ValueType`];
+    const condition = params[`${prefix}Condition`] as z.infer<typeof dynamoFilterOperatorSch> | undefined;
+    const valueType = params[`${prefix}ValueType`] as z.infer<typeof dynamoAttrTypeSch> | undefined;
     const value = params[`${prefix}Value`];
     const value2 = params[`${prefix}Value2`];
 
@@ -400,7 +400,7 @@ function validateFilterParams(params: GenericRecord, ctx: z.RefinementCtx): void
 
     if (hasNoValueCondition) {
       if (value !== undefined || value2 !== undefined) {
-        addIssue(ctx, `${prefix}Value`, `${String(condition)} must not include a value.`);
+        addIssue(ctx, `${prefix}Value`, `${condition} must not include a value.`);
       }
 
       continue;
@@ -409,7 +409,7 @@ function validateFilterParams(params: GenericRecord, ctx: z.RefinementCtx): void
     const isNullValue = valueType === 'NULL';
 
     if (value === undefined && !isNullValue) {
-      addIssue(ctx, `${prefix}Value`, `${String(condition)} requires a value.`);
+      addIssue(ctx, `${prefix}Value`, `${condition} requires a value.`);
     }
 
     if (condition === 'BETWEEN') {
@@ -417,7 +417,7 @@ function validateFilterParams(params: GenericRecord, ctx: z.RefinementCtx): void
         addIssue(ctx, `${prefix}Value2`, 'BETWEEN requires a second value.');
       }
 
-      if (valueType !== undefined && !['S', 'N', 'B'].includes(String(valueType))) {
+      if (valueType !== undefined && valueType !== 'S' && valueType !== 'N' && valueType !== 'B') {
         addIssue(ctx, `${prefix}ValueType`, 'BETWEEN supports only S, N, or B values.');
       }
     }
@@ -526,6 +526,7 @@ function hasAnyDefined(params: GenericRecord, keys: string[]): boolean {
  * @param ctx Zod refinement context receiving the issue.
  * @param path Dot-free request field name associated with the issue.
  * @param message Human-readable explanation of the validation failure.
+ *
  */
 function addIssue(ctx: z.RefinementCtx, path: string, message: string): void {
   ctx.addIssue({

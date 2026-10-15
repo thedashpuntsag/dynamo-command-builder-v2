@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import { customBatchWriteCmdInputSch } from '../../types/command-input.types';
 import { buildValidatedBatchWriteCommandInput } from '../batch-write-command';

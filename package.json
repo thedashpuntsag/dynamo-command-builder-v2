@@ -20,16 +20,16 @@
   "sideEffects": false,
   "scripts": {
     "analyze": "du -sh dist && ls -lh dist/",
-    "build": "tsup",
-    "dev": "tsup --watch",
+    "build": "vp pack",
+    "dev": "vp pack --watch",
     "prepublishOnly": "pnpm run build",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "test": "vitest run --passWithNoTests",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage --passWithNoTests",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
+    "format": "vp fmt .",
+    "format:check": "vp fmt --check .",
+    "test": "vp test run --passWithNoTests",
+    "test:watch": "vp test",
+    "test:coverage": "vp test run --coverage --passWithNoTests",
+    "lint": "vp lint .",
+    "lint:fix": "vp lint . --fix",
     "typecheck": "tsc --noEmit",
     "check": "pnpm run format && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build",
     "publish:dry": "pnpm pack --dry-run",
@@ -71,17 +71,13 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.5",
-    "@vitest/coverage-v8": "^4.1.11",
-    "eslint": "^10.12.0",
+    "@vitest/coverage-v8": "catalog:",
     "globals": "^17.13.0",
     "husky": "^9.1.7",
     "jiti": "^2.7.0",
-    "prettier": "^3.9.10",
-    "tsup": "^8.5.1",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.1",
-    "vitest": "^4.1.11"
+    "vitest": "catalog:",
+    "vite-plus": "catalog:"
   }
 }
