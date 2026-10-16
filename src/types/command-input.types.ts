@@ -358,13 +358,213 @@ export const customScanCmdInputSch = z.object({
 export type CustomScanCmdInput = z.infer<typeof customScanCmdInputSch>;
 
 // --------------------------------------- Transact get command schemas ------------------------------------------------
-export const customTransactGetCmdInputSch = z.object({});
-export type CustomTransactGetCmdInput = z.infer<typeof customTransactGetCmdInputSch>;
+// --------------------------------------- Transact get command schemas ------------------------------------------------
+export const customTransactGetItemSch = z
+  .object({
+    tableName: z.string().trim().min(1),
+
+    key: genericRecordSch.refine(
+      (key) => {
+        const keyCount = Object.keys(key).length;
+
+        return keyCount === 1 || keyCount === 2;
+      },
+      {
+        message: 'Key must contain exactly 1 or 2 attributes.',
+      }
+    ),
+
+    projectionExpression: optStringSch,
+
+    expressionAttributeNames: stringRecordSch.optional(),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.expressionAttributeNames && !input.projectionExpression) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expressionAttributeNames'],
+        message: 'expressionAttributeNames requires projectionExpression.',
+      });
+    }
+  });
+
+export const customTransactGetCmdInputSch = z
+  .object({
+    transactItems: z
+      .array(customTransactGetItemSch)
+      .min(1, 'At least one transact item is required.')
+      .max(100, 'A transact get can contain at most 100 items.'),
+
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
+  })
+  .strict();
+
+export type CustomTransactGetCmdInput = z.input<typeof customTransactGetCmdInputSch>;
 
 // --------------------------------------- Transact write command schemas ----------------------------------------------
-export const customTransactWriteCmdInputSch = z.object({});
-export type CustomTransactWriteCmdInput = z.infer<typeof customTransactWriteCmdInputSch>;
+// --------------------------------------- Transact write command schemas ------------------------------------------------
 
+const returnValuesOnConditionCheckFailureSch = z.enum(['NONE', 'ALL_OLD']).default('NONE');
+
+const transactWritePutItemSch = z
+  .object({
+    operation: z.literal('PUT'),
+
+    tableName: z.string().trim().min(1),
+
+    item: genericRecordSch,
+
+    conditionExpression: optStringSch,
+
+    expressionAttributeNames: stringRecordSch.optional(),
+
+    expressionAttributeValues: genericRecordSch.optional(),
+
+    returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.expressionAttributeNames && !input.conditionExpression) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expressionAttributeNames'],
+        message: 'expressionAttributeNames requires conditionExpression for a PUT operation.',
+      });
+    }
+
+    if (input.expressionAttributeValues && !input.conditionExpression) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expressionAttributeValues'],
+        message: 'expressionAttributeValues requires conditionExpression for a PUT operation.',
+      });
+    }
+  });
+
+const transactWriteUpdateItemSch = z
+  .object({
+    operation: z.literal('UPDATE'),
+
+    tableName: z.string().trim().min(1),
+
+    key: genericRecordSch.refine(
+      (key) => {
+        const keyCount = Object.keys(key).length;
+
+        return keyCount === 1 || keyCount === 2;
+      },
+      {
+        message: 'Key must contain exactly 1 or 2 attributes.',
+      }
+    ),
+
+    updateExpression: z.string().trim().min(1),
+
+    conditionExpression: optStringSch,
+
+    expressionAttributeNames: stringRecordSch.optional(),
+
+    expressionAttributeValues: genericRecordSch.optional(),
+
+    returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
+  })
+  .strict();
+
+const transactWriteDeleteItemSch = z
+  .object({
+    operation: z.literal('DELETE'),
+
+    tableName: z.string().trim().min(1),
+
+    key: genericRecordSch.refine(
+      (key) => {
+        const keyCount = Object.keys(key).length;
+
+        return keyCount === 1 || keyCount === 2;
+      },
+      {
+        message: 'Key must contain exactly 1 or 2 attributes.',
+      }
+    ),
+
+    conditionExpression: optStringSch,
+
+    expressionAttributeNames: stringRecordSch.optional(),
+
+    expressionAttributeValues: genericRecordSch.optional(),
+
+    returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.expressionAttributeNames && !input.conditionExpression) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expressionAttributeNames'],
+        message: 'expressionAttributeNames requires conditionExpression for a DELETE operation.',
+      });
+    }
+
+    if (input.expressionAttributeValues && !input.conditionExpression) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expressionAttributeValues'],
+        message: 'expressionAttributeValues requires conditionExpression for a DELETE operation.',
+      });
+    }
+  });
+
+const transactWriteConditionCheckItemSch = z
+  .object({
+    operation: z.literal('CONDITION_CHECK'),
+
+    tableName: z.string().trim().min(1),
+
+    key: genericRecordSch.refine(
+      (key) => {
+        const keyCount = Object.keys(key).length;
+
+        return keyCount === 1 || keyCount === 2;
+      },
+      {
+        message: 'Key must contain exactly 1 or 2 attributes.',
+      }
+    ),
+
+    conditionExpression: z.string().trim().min(1),
+
+    expressionAttributeNames: stringRecordSch.optional(),
+
+    expressionAttributeValues: genericRecordSch.optional(),
+
+    returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
+  })
+  .strict();
+
+export const customTransactWriteItemSch = z.discriminatedUnion('operation', [
+  transactWritePutItemSch,
+  transactWriteUpdateItemSch,
+  transactWriteDeleteItemSch,
+  transactWriteConditionCheckItemSch,
+]);
+
+export const customTransactWriteCmdInputSch = z
+  .object({
+    transactItems: z
+      .array(customTransactWriteItemSch)
+      .min(1, 'At least one transact write item is required.')
+      .max(100, 'A transact write can contain at most 100 operations.'),
+
+    clientRequestToken: z.string().trim().min(1).max(36).optional(),
+
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
+
+    returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.default('NONE'),
+  })
+  .strict();
+
+export type CustomTransactWriteCmdInput = z.input<typeof customTransactWriteCmdInputSch>;
 // --------------------------------------- Update command schemas ------------------------------------------------------
 export const customUpdateCmdInputSch = z.object({
   tableName: z.string(),
