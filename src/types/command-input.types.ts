@@ -5,7 +5,6 @@ import {
   optStringSch,
   returnConsumedCapacityOptionsSch,
   returnItemCollectionMetricsOptionsSch,
-  returnValuesOptionsSch,
   stringRecordSch,
 } from './utility.types';
 
@@ -566,21 +565,209 @@ export const customTransactWriteCmdInputSch = z
 
 export type CustomTransactWriteCmdInput = z.input<typeof customTransactWriteCmdInputSch>;
 // --------------------------------------- Update command schemas ------------------------------------------------------
-export const customUpdateCmdInputSch = z.object({
-  tableName: z.string(),
-  key: genericRecordSch,
-  item: genericRecordSch.optional(),
 
-  updateExpression: optStringSch,
-  conditionExpression: optStringSch,
+// --------------------------------------- Update command schemas ------------------------------------------------
+const updateNativeValueSch = z.unknown();
 
-  expressionAttributeNames: stringRecordSch.optional(),
-  expressionAttributeValues: genericRecordSch.optional(),
-  extraExpAttributeNames: stringRecordSch.optional(),
-  extraExpAttributeValues: genericRecordSch.optional(),
+const updateRecordSch = z.record(z.string().min(1), updateNativeValueSch).superRefine((record, ctx) => {
+  const validate = (value: unknown, path: PropertyKey[], ancestors: Set<object>): void => {
+    if (value === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path,
+        message: 'Undefined cannot be stored as a DynamoDB value.',
+      });
+      return;
+    }
 
-  returnValues: returnValuesOptionsSch.optional(),
-  returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
-  returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.optional(),
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      ctx.addIssue({
+        code: 'custom',
+        path,
+        message: 'DynamoDB numbers must be finite.',
+      });
+      return;
+    }
+
+    if (
+      value === null ||
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      typeof value === 'bigint' ||
+      value instanceof Uint8Array
+    ) {
+      return;
+    }
+
+    if (typeof value !== 'object') {
+      ctx.addIssue({
+        code: 'custom',
+        path,
+        message: 'Unsupported DynamoDB value type.',
+      });
+      return;
+    }
+
+    if (ancestors.has(value)) {
+      ctx.addIssue({
+        code: 'custom',
+        path,
+        message: 'Circular references are not supported.',
+      });
+      return;
+    }
+
+    if (
+      !Array.isArray(value) &&
+      !(value instanceof Set) &&
+      Object.getPrototypeOf(value) !== Object.prototype &&
+      Object.getPrototypeOf(value) !== null
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path,
+        message: 'Only plain objects, arrays, and sets are supported.',
+      });
+      return;
+    }
+
+    ancestors.add(value);
+
+    if (value instanceof Set) {
+      if (value.size === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path,
+          message: 'DynamoDB sets must not be empty.',
+        });
+      }
+
+      for (const entry of value) {
+        validate(entry, path, ancestors);
+      }
+
+      const entries = [...value];
+
+      const category = (entry: unknown): string => {
+        if (typeof entry === 'string') return 'string';
+        if (typeof entry === 'number' || typeof entry === 'bigint') {
+          return 'number';
+        }
+        if (entry instanceof Uint8Array) return 'binary';
+        return 'unsupported';
+      };
+
+      const categories = new Set(entries.map(category));
+
+      if (categories.size !== 1 || categories.has('unsupported')) {
+        ctx.addIssue({
+          code: 'custom',
+          path,
+          message: 'Sets must contain one supported DynamoDB scalar type.',
+        });
+      }
+    } else {
+      for (const [key, child] of Object.entries(value)) {
+        validate(child, [...path, key], ancestors);
+      }
+    }
+
+    ancestors.delete(value);
+  };
+
+  for (const [key, value] of Object.entries(record)) {
+    validate(value, [key], new Set());
+  }
 });
-export type CustomUpdateCmdInput = z.infer<typeof customUpdateCmdInputSch>;
+
+const updateKeySch = z
+  .record(z.string().min(1), z.union([z.string().min(1), z.number().finite(), z.instanceof(Uint8Array)]))
+  .refine(
+    (key) => {
+      const count = Object.keys(key).length;
+      return count === 1 || count === 2;
+    },
+    {
+      message: 'Key must contain exactly 1 or 2 attributes.',
+    }
+  );
+
+const updateNameTokenSch = z.string().regex(/^#[A-Za-z0-9_]+$/);
+const updateValueTokenSch = z.string().regex(/^:[A-Za-z0-9_]+$/);
+
+const updateExpressionNamesSch = z.record(updateNameTokenSch, z.string().min(1));
+const updateExpressionValuesSch = z.record(updateValueTokenSch, z.unknown());
+
+export const customUpdateCmdInputSch = z
+  .object({
+    tableName: z.string().trim().min(1),
+    key: updateKeySch,
+    item: updateRecordSch.optional(),
+    updateExpression: z.string().trim().min(1).optional(),
+    conditionExpression: z.string().trim().min(1).optional(),
+    expressionAttributeNames: updateExpressionNamesSch.optional(),
+    expressionAttributeValues: updateExpressionValuesSch.optional(),
+    extraExpAttributeNames: updateExpressionNamesSch.optional(),
+    extraExpAttributeValues: updateExpressionValuesSch.optional(),
+    returnValues: z.enum(['NONE', 'ALL_OLD', 'UPDATED_OLD', 'ALL_NEW', 'UPDATED_NEW']).default('NONE'),
+    returnValuesOnConditionCheckFailure: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
+    returnConsumedCapacity: z.enum(['NONE', 'TOTAL', 'INDEXES']).default('NONE'),
+    returnItemCollectionMetrics: z.enum(['NONE', 'SIZE']).default('NONE'),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    const hasItem = input.item !== undefined;
+    const hasExpression = input.updateExpression !== undefined;
+
+    if (hasItem === hasExpression) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['item'],
+        message: 'Provide exactly one of item or updateExpression.',
+      });
+    }
+
+    if (hasItem && Object.keys(input.item ?? {}).length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['item'],
+        message: 'Item must contain at least one attribute.',
+      });
+    }
+
+    if (hasItem) {
+      for (const attribute of Object.keys(input.item ?? {})) {
+        if (Object.hasOwn(input.key, attribute)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['item', attribute],
+            message: 'Primary-key attributes cannot be updated.',
+          });
+        }
+      }
+    }
+
+    for (const [field, values] of [
+      ['expressionAttributeValues', input.expressionAttributeValues],
+      ['extraExpAttributeValues', input.extraExpAttributeValues],
+    ] as const) {
+      if (values) {
+        const result = updateRecordSch.safeParse(values);
+
+        if (!result.success) {
+          for (const issue of result.error.issues) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [field, ...issue.path],
+              message: issue.message,
+            });
+          }
+        }
+      }
+    }
+  });
+
+export type CustomUpdateCmdInput = z.input<typeof customUpdateCmdInputSch>;
+
+export type ParsedUpdateCmdInput = z.output<typeof customUpdateCmdInputSch>;

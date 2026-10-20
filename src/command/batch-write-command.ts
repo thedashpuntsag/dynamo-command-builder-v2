@@ -15,6 +15,11 @@ type KeySchema = {
  * 3. Validate that each key attribute is present and has a valid type (string or finite number).
  * 4. Construct and return the primary key object.
  *
+ * ### Notes:
+ * - The function will throw an error if the record does not conform to the key schema.
+ * - Only string and finite number types are considered valid for primary key attributes.
+ *
+ *
  * @param record The record from which to extract the primary key.
  * @param keySchema The key schema defining the partition and sort keys.
  * @param shouldRejectExtraAttributes Whether to reject records with extra attributes beyond the key schema.
@@ -63,10 +68,15 @@ function getItemKey(
 }
 
 /**
- * Creates a unique signature for a primary key, used to detect duplicate operations.
+ * Generates a stable signature for a primary key object.
  *
- * @param key The primary key object.
- * @returns A string representing the unique signature of the key.
+ * ### Notes:
+ * - Keys are sorted by attribute name before hashing.
+ * - The signature includes value type information to avoid collisions.
+ * - This helper is used to detect duplicate item targets inside a batch.
+ *
+ * @param key The primary key object for a single item.
+ * @returns A stable string signature representing the key.
  */
 function createKeySignature(key: Record<string, unknown>): string {
   return JSON.stringify(
@@ -79,12 +89,18 @@ function createKeySignature(key: Record<string, unknown>): string {
 /**
  * Validates custom batch-write input and builds DynamoDB command input.
  *
- * Process flow:
+ * ### Process Flow:
  * 1. Validate tables and operations.
  * 2. Validate each item's primary key.
  * 3. Reject multiple operations targeting the same item.
  * 4. Build native JavaScript write requests.
  * 5. Construct the BatchWriteCommand input.
+ *
+ * ### Notes:
+ * - This builder uses `BatchWriteCommandInput` from `@aws-sdk/lib-dynamodb`.
+ * - `PutRequest.Item` values remain native JavaScript values.
+ * - `DeleteRequest.Key` is derived from the provided key schema.
+ * - This function only constructs command input and does not execute an AWS request.
  *
  * @param input Untrusted custom batch-write input.
  * @returns Validated DynamoDB BatchWriteCommandInput.

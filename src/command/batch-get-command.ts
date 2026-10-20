@@ -4,11 +4,17 @@ import { BatchGetCommandInput } from '@aws-sdk/lib-dynamodb';
 /**
  * Validates custom batch-get input and constructs DynamoDB command input.
  *
- * Process flow:
+ * ### Process Flow:
  * 1. Validate the request structure.
  * 2. Validate key consistency for every table.
  * 3. Reject duplicate keys.
  * 4. Build the RequestItems map using native JavaScript values.
+ *
+ * ### Notes:
+ * - This builder uses `BatchGetCommandInput` from `@aws-sdk/lib-dynamodb`.
+ * - Keys and projection settings are passed as native JavaScript values.
+ * - Projection attributes are de-duplicated and always include primary-key attributes.
+ * - This function only constructs command input and does not execute an AWS request.
  *
  * @param input The untrusted input to validate.
  * @returns The constructed BatchGetCommandInput.

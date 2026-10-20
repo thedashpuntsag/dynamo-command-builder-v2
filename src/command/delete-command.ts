@@ -4,11 +4,17 @@ import type { DeleteCommandInput } from '@aws-sdk/lib-dynamodb';
 /**
  * Validates custom delete input and builds DynamoDB command input.
  *
- * Process flow:
+ * ### Process Flow:
  * 1. Validate the table, primary key, condition and return options.
  * 2. Verify that expression placeholders have matching definitions.
  * 3. Use native JavaScript key and expression values.
  * 4. Construct the DeleteCommandInput.
+ *
+ * ### Notes:
+ * - This builder uses `DeleteCommandInput` from `@aws-sdk/lib-dynamodb`.
+ * - `Key` and `ExpressionAttributeValues` remain native JavaScript values.
+ * - Caller-provided expression attributes are passed through without evaluation.
+ * - This function only constructs command input and does not execute an AWS request.
  *
  * @param input Untrusted custom delete-command input.
  * @returns Validated DynamoDB DeleteCommand input.
