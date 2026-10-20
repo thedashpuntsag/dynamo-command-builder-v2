@@ -296,6 +296,7 @@ export const customPutCmdInputSch = z
     expressionAttributeValues: genericRecordSch.optional(),
     returnValues: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
     returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
+    returnValuesOnConditionCheckFailure: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
     returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.default('NONE'),
   })
   .strict()

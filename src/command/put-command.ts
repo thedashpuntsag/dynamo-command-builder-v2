@@ -1,29 +1,31 @@
 import { CustomPutCmdInput, customPutCmdInputSch } from '@/types';
 import { extractExpAttributeNamesFromExpression } from '@/utils';
-import { PutCommandInput } from '@aws-sdk/lib-dynamodb';
+import type { PutCommandInput } from '@aws-sdk/lib-dynamodb';
 
 /**
  * Validates input and builds an AWS SDK DocumentClient `PutCommandInput`.
  *
  * ### Process Flow:
- * 1. Validate the input against the put-command schema.
+ * 1. Validate input against the put-command schema.
  * 2. Construct the base `PutCommandInput`.
- * 3. Process the condition expression when provided.
- * 4. Generate expression attribute-name aliases from the condition.
- * 5. Merge caller-provided expression attribute names over generated aliases.
- * 6. Attach expression attribute values when provided.
- * 7. Return the validated `PutCommandInput`.
+ * 3. Extract referenced attribute-name and value tokens from the condition.
+ * 4. Generate attribute-name aliases and merge caller-provided mappings.
+ * 5. Remove unused expression attribute names and values.
+ * 6. Validate that every referenced token has a corresponding mapping.
+ * 7. Attach conditional expressions and response options.
+ * 8. Return the validated `PutCommandInput`.
  *
  * ### Notes:
- * - This builder uses `PutCommandInput` from `@aws-sdk/lib-dynamodb`.
- * - `Item` and `ExpressionAttributeValues` remain native JavaScript values.
- * - Caller-provided `ExpressionAttributeNames` take precedence over generated aliases.
- * - `PutItem` replaces the entire existing item with the same primary key.
- * - This function only constructs command input and never executes an AWS request.
+ * - Uses native JavaScript values through `@aws-sdk/lib-dynamodb`.
+ * - Caller-provided aliases override automatically generated mappings.
+ * - Unused expression attribute names and values are silently omitted.
+ * - Missing referenced expression values cause an error.
+ * - PutItem replaces the entire existing item with the same primary key.
+ * - This function never executes an AWS request.
  *
- * @param input The put-item input to validate and build.
+ * @param input The put-item request to validate and build.
  * @returns A validated DynamoDB DocumentClient `PutCommandInput`.
- * @throws If the input fails schema validation.
+ * @throws If input validation or expression-token validation fails.
  */
 export function buildValidatedPutCommand(input: CustomPutCmdInput): PutCommandInput {
   try {
@@ -35,27 +37,56 @@ export function buildValidatedPutCommand(input: CustomPutCmdInput): PutCommandIn
       ReturnValues: parsed.returnValues,
       ReturnConsumedCapacity: parsed.returnConsumedCapacity,
       ReturnItemCollectionMetrics: parsed.returnItemCollectionMetrics,
+      ReturnValuesOnConditionCheckFailure: parsed.returnValuesOnConditionCheckFailure,
     };
 
     if (!parsed.conditionExpression) {
       return commandInput;
     }
 
-    commandInput.ConditionExpression = parsed.conditionExpression;
+    const conditionExpression = parsed.conditionExpression;
 
-    const generatedExpressionAttributeNames = extractExpAttributeNamesFromExpression(parsed.conditionExpression);
+    const referencedNames = new Set(conditionExpression.match(/#[A-Za-z0-9_]+/g) ?? []);
 
-    const expressionAttributeNames = {
-      ...generatedExpressionAttributeNames,
-      ...parsed.expressionAttributeNames,
+    const referencedValues = new Set(conditionExpression.match(/:[A-Za-z0-9_]+/g) ?? []);
+
+    const generatedNames = extractExpAttributeNamesFromExpression(conditionExpression);
+
+    const providedNames = parsed.expressionAttributeNames ?? {};
+    const providedValues = parsed.expressionAttributeValues ?? {};
+
+    const mergedNames: Record<string, string> = {
+      ...generatedNames,
+      ...providedNames,
     };
+
+    const expressionAttributeNames: Record<string, string> = {};
+    const expressionAttributeValues: Record<string, unknown> = {};
+
+    // After generating / merging names
+    for (const token of referencedNames) {
+      if (!Object.hasOwn(mergedNames, token)) {
+        throw new Error(`Missing expression attribute name: "${token}".`);
+      }
+      expressionAttributeNames[token] = mergedNames[token]!; // safe after hasOwn
+    }
+
+    // Values stay the same (caller-provided only)
+    for (const token of referencedValues) {
+      if (!Object.hasOwn(providedValues, token)) {
+        throw new Error(`Missing expression attribute value: "${token}".`);
+      }
+      expressionAttributeValues[token] = providedValues[token];
+    }
+
+    commandInput.ConditionExpression = conditionExpression;
 
     if (Object.keys(expressionAttributeNames).length > 0) {
       commandInput.ExpressionAttributeNames = expressionAttributeNames;
     }
 
-    if (parsed.expressionAttributeValues && Object.keys(parsed.expressionAttributeValues).length > 0) {
-      commandInput.ExpressionAttributeValues = parsed.expressionAttributeValues;
+    if (Object.keys(expressionAttributeValues).length > 0) {
+      commandInput.ExpressionAttributeValues = expressionAttributeValues;
     }
 
     return commandInput;

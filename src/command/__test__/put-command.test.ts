@@ -51,6 +51,7 @@ describe('buildValidatedPutCommand', () => {
       ReturnValues: 'NONE',
       ReturnConsumedCapacity: 'NONE',
       ReturnItemCollectionMetrics: 'NONE',
+      ReturnValuesOnConditionCheckFailure: 'NONE',
     });
 
     expect(command.Item).toStrictEqual(item);
@@ -86,6 +87,7 @@ describe('buildValidatedPutCommand', () => {
       },
       ReturnValues: 'ALL_OLD',
       ReturnConsumedCapacity: 'NONE',
+      ReturnValuesOnConditionCheckFailure: 'NONE',
       ReturnItemCollectionMetrics: 'NONE',
     });
   });
@@ -187,15 +189,60 @@ describe('buildValidatedPutCommand', () => {
     });
   });
 
-  it('keeps native JavaScript values instead of low-level DynamoDB AttributeValues', () => {
-    const values = {
+  it('preserves referenced native JavaScript values and removes unused tokens', () => {
+    const command = build({
+      tableName: 'requests',
+      item: {
+        id: 'request-001',
+      },
+      conditionExpression:
+        '#version = :expectedVersion AND #enabled = :enabled AND #metadata = :metadata AND contains(#tags, :requiredTag)',
+      expressionAttributeNames: {
+        '#version': 'version',
+        '#enabled': 'enabled',
+        '#metadata': 'metadata',
+        '#tags': 'tags',
+        '#unused': 'unused',
+      },
+      expressionAttributeValues: {
+        ':expectedVersion': 12,
+        ':enabled': true,
+        ':metadata': {
+          source: 'API',
+          retries: 2,
+        },
+        ':tags': ['risk', 'manual-review'],
+        ':unused': 'SHOULD_BE_REMOVED',
+        ':requiredTag': 'risk',
+      },
+    });
+
+    expect(command.ExpressionAttributeNames).toStrictEqual({
+      '#version': 'version',
+      '#enabled': 'enabled',
+      '#metadata': 'metadata',
+      '#tags': 'tags',
+    });
+
+    expect(command.ExpressionAttributeValues).toStrictEqual({
       ':expectedVersion': 12,
       ':enabled': true,
       ':metadata': {
         source: 'API',
         retries: 2,
       },
-      ':tags': ['risk', 'manual-review'],
+      ':requiredTag': 'risk',
+    });
+
+    expect(command.ExpressionAttributeValues).not.toHaveProperty(':unused');
+    expect(command.ExpressionAttributeValues).not.toHaveProperty(':tags');
+    expect(command.ExpressionAttributeNames).not.toHaveProperty('#unused');
+  });
+  it('preserves native JavaScript values referenced by the condition', () => {
+    const metadata = {
+      source: 'API',
+      retries: 2,
+      tags: ['risk', 'manual-review'],
     };
 
     const command = build({
@@ -203,19 +250,125 @@ describe('buildValidatedPutCommand', () => {
       item: {
         id: 'request-001',
       },
-      conditionExpression: '#version = :expectedVersion AND #enabled = :enabled',
+      conditionExpression: '#version = :expectedVersion AND #enabled = :enabled AND #metadata = :metadata',
       expressionAttributeNames: {
         '#version': 'version',
         '#enabled': 'enabled',
+        '#metadata': 'metadata',
       },
-      expressionAttributeValues: values,
+      expressionAttributeValues: {
+        ':expectedVersion': 12,
+        ':enabled': true,
+        ':metadata': metadata,
+      },
     });
 
-    expect(command.ExpressionAttributeValues).toEqual(values);
+    expect(command.ExpressionAttributeValues).toStrictEqual({
+      ':expectedVersion': 12,
+      ':enabled': true,
+      ':metadata': metadata,
+    });
 
-    expect(command.ExpressionAttributeValues).not.toEqual({
-      ':expectedVersion': { N: '12' },
-      ':enabled': { BOOL: true },
+    expect(command.ExpressionAttributeValues?.[':expectedVersion']).toBe(12);
+    expect(command.ExpressionAttributeValues?.[':enabled']).toBe(true);
+    expect(command.ExpressionAttributeValues?.[':metadata']).toStrictEqual(metadata);
+  });
+
+  it('silently removes unused expression attribute names and values', () => {
+    const command = build({
+      tableName: 'orders',
+      item: {
+        id: 'order-001',
+        status: 'CONFIRMED',
+      },
+      conditionExpression: '#status = :expectedStatus',
+      expressionAttributeNames: {
+        '#status': 'status',
+        '#unused': 'someOtherAttribute',
+        '#anotherUnused': 'version',
+      },
+      expressionAttributeValues: {
+        ':expectedStatus': 'PENDING',
+        ':unused': 123,
+        ':anotherUnused': {
+          active: true,
+        },
+      },
+    });
+
+    expect(command.ConditionExpression).toBe('#status = :expectedStatus');
+
+    expect(command.ExpressionAttributeNames).toStrictEqual({
+      '#status': 'status',
+    });
+
+    expect(command.ExpressionAttributeValues).toStrictEqual({
+      ':expectedStatus': 'PENDING',
+    });
+  });
+
+  it('allows explicit alias mappings to override inferred shorthand names', () => {
+    const command = build({
+      tableName: 'positions',
+      item: {
+        accountId: 'ACC-001',
+        symbol: 'NVDA',
+        status: 'OPEN',
+      },
+      conditionExpression: '#account = :accountId AND #status = :expectedStatus',
+      expressionAttributeNames: {
+        '#account': 'accountId',
+      },
+      expressionAttributeValues: {
+        ':accountId': 'ACC-001',
+        ':expectedStatus': 'PENDING',
+      },
+    });
+
+    expect(command.ExpressionAttributeNames).toStrictEqual({
+      '#account': 'accountId',
+      '#status': 'status',
+    });
+  });
+
+  it('rejects missing expression attribute values referenced by the condition', () => {
+    expect(() =>
+      build({
+        tableName: 'orders',
+        item: {
+          id: 'order-001',
+          status: 'CONFIRMED',
+        },
+        conditionExpression: '#status = :expectedStatus AND #version = :expectedVersion',
+        expressionAttributeNames: {
+          '#status': 'status',
+          '#version': 'version',
+        },
+        expressionAttributeValues: {
+          ':expectedStatus': 'PENDING',
+        },
+      })
+    ).toThrow(/Missing expression attribute value.*:expectedVersion/);
+  });
+
+  it('preserves ReturnValuesOnConditionCheckFailure', () => {
+    const command = build({
+      tableName: 'orders',
+      item: {
+        id: 'order-001',
+        status: 'CONFIRMED',
+        version: 8,
+      },
+      conditionExpression: '#version = :expectedVersion',
+      expressionAttributeValues: {
+        ':expectedVersion': 7,
+      },
+      returnValuesOnConditionCheckFailure: 'ALL_OLD',
+    });
+
+    expect(command.ReturnValuesOnConditionCheckFailure).toBe('ALL_OLD');
+    expect(command.ExpressionAttributeNames).toStrictEqual({
+      '#version': 'version',
     });
   });
 
