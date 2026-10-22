@@ -340,24 +340,86 @@ export const customQueryCmdInputSch = z.object({
 export type CustomQueryCmdInput = z.infer<typeof customQueryCmdInputSch>;
 
 // --------------------------------------- Scan command schemas --------------------------------------------------------
-export const customScanCmdInputSch = z.object({
-  tableName: z.string(),
 
-  scanCommand: dynamoReadPropsSch,
+const scanExpressionSch = z.string().trim().min(1);
 
-  filterExpression: optStringSch,
-  projectionExpression: optStringSch,
+const scanExpressionNamesSch = z.record(z.string().regex(/^#[A-Za-z0-9_]+$/), z.string().min(1));
 
-  expressionAttributeNames: stringRecordSch.optional(),
-  expressionAttributeValues: genericRecordSch.optional(),
-  extraExpAttributeNames: stringRecordSch.optional(),
-  extraExpAttributeValues: genericRecordSch.optional(),
-  returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
-  returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.optional(),
-});
-export type CustomScanCmdInput = z.infer<typeof customScanCmdInputSch>;
+const scanExpressionValuesSch = z.record(z.string().regex(/^:[A-Za-z0-9_]+$/), z.unknown());
 
-// --------------------------------------- Transact get command schemas ------------------------------------------------
+export const customScanCmdInputSch = z
+  .object({
+    tableName: z.string().trim().min(1),
+    indexName: z.string().trim().min(1).optional(),
+    filterExpression: scanExpressionSch.optional(),
+    projectionExpression: scanExpressionSch.optional(),
+    expressionAttributeNames: scanExpressionNamesSch.optional(),
+    expressionAttributeValues: scanExpressionValuesSch.optional(),
+    exclusiveStartKey: z
+      .record(z.string().min(1), z.unknown())
+      .refine((key) => Object.keys(key).length > 0, {
+        message: 'ExclusiveStartKey must not be empty.',
+      })
+      .optional(),
+    limit: z.number().int().positive().optional(),
+    consistentRead: z.boolean().default(false),
+    select: z.enum(['ALL_ATTRIBUTES', 'ALL_PROJECTED_ATTRIBUTES', 'SPECIFIC_ATTRIBUTES', 'COUNT']).optional(),
+    segment: z.number().int().min(0).optional(),
+    totalSegments: z.number().int().min(1).max(1_000_000).optional(),
+    returnConsumedCapacity: z.enum(['NONE', 'TOTAL', 'INDEXES']).default('NONE'),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    // Both properties are required for parallel scans.
+    const hasSegment = input.segment !== undefined;
+    const hasTotalSegments = input.totalSegments !== undefined;
+
+    if (hasSegment !== hasTotalSegments) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [hasSegment ? 'totalSegments' : 'segment'],
+        message: 'Segment and totalSegments must be provided together.',
+      });
+    }
+
+    if (hasSegment && hasTotalSegments && input.segment! >= input.totalSegments!) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['segment'],
+        message: 'Segment must be less than totalSegments.',
+      });
+    }
+
+    // ProjectionExpression and Select must be compatible.
+    if (input.projectionExpression) {
+      if (input.select !== undefined && input.select !== 'SPECIFIC_ATTRIBUTES') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['select'],
+          message: 'ProjectionExpression requires Select to be SPECIFIC_ATTRIBUTES or omitted.',
+        });
+      }
+    }
+
+    if (input.select === 'SPECIFIC_ATTRIBUTES' && !input.projectionExpression) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['projectionExpression'],
+        message: 'SPECIFIC_ATTRIBUTES requires projectionExpression.',
+      });
+    }
+
+    if (input.select === 'ALL_PROJECTED_ATTRIBUTES' && !input.indexName) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['select'],
+        message: 'ALL_PROJECTED_ATTRIBUTES requires indexName.',
+      });
+    }
+  });
+
+export type CustomScanCmdInput = z.input<typeof customScanCmdInputSch>;
+
 // --------------------------------------- Transact get command schemas ------------------------------------------------
 export const customTransactGetItemSch = z
   .object({
