@@ -5,8 +5,75 @@ import {
   optStringSch,
   returnConsumedCapacityOptionsSch,
   returnItemCollectionMetricsOptionsSch,
+  returnValuesOptionsSch,
   stringRecordSch,
 } from './utility.types';
+
+const trimmedRequiredStringSch = z.string().trim().min(1);
+const returnValuesOnConditionCheckFailureSch = z.enum(['NONE', 'ALL_OLD']).default('NONE');
+const expressionNameTokenSch = z.string().regex(/^#[A-Za-z0-9_]+$/);
+const expressionValueTokenSch = z.string().regex(/^:[A-Za-z0-9_]+$/);
+const expressionNamesSch = z.record(expressionNameTokenSch, z.string().min(1));
+const expressionValuesSch = z.record(expressionValueTokenSch, z.unknown());
+
+const oneOrTwoAttributeRecordSch = genericRecordSch.refine(
+  (record) => {
+    const attributeCount = Object.keys(record).length;
+
+    return attributeCount === 1 || attributeCount === 2;
+  },
+  {
+    message: 'Key must contain exactly 1 or 2 attributes.',
+  }
+);
+
+type ExpressionMappingInput = {
+  conditionExpression?: string | undefined;
+  expressionAttributeNames?: Record<string, string> | undefined;
+  expressionAttributeValues?: Record<string, unknown> | undefined;
+};
+
+function validateConditionExpressionMappings(
+  input: ExpressionMappingInput,
+  ctx: z.RefinementCtx,
+  operation?: 'PUT' | 'DELETE'
+): void {
+  if (input.conditionExpression) return;
+
+  const operationSuffix = operation ? ` for a ${operation} operation` : '';
+
+  if (input.expressionAttributeNames) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['expressionAttributeNames'],
+      message: `expressionAttributeNames requires conditionExpression${operationSuffix}.`,
+    });
+  }
+
+  if (input.expressionAttributeValues) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['expressionAttributeValues'],
+      message: `expressionAttributeValues requires conditionExpression${operationSuffix}.`,
+    });
+  }
+}
+
+function validateUniqueTableNames(tables: readonly { tableName: string }[], ctx: z.RefinementCtx): void {
+  const tableNames = new Set<string>();
+
+  tables.forEach(({ tableName }, index) => {
+    if (tableNames.has(tableName)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Duplicate table "${tableName}" is not allowed.`,
+        path: ['tables', index, 'tableName'],
+      });
+    }
+
+    tableNames.add(tableName);
+  });
+}
 
 // --------------------------------------- Batch get command schemas ---------------------------------------------------
 
@@ -43,26 +110,13 @@ export const customBatchGetCmdInputSch = z
   .object({
     tables: z.array(batchGetTableSch).min(1).max(100),
 
-    returnConsumedCapacity: z.enum(['NONE', 'TOTAL', 'INDEXES']).default('NONE'),
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
   })
   .strict()
   .superRefine(({ tables }, ctx) => {
-    const tableNames = new Set<string>();
-    let totalKeyCount = 0;
+    validateUniqueTableNames(tables, ctx);
 
-    tables.forEach((table, index) => {
-      totalKeyCount += table.keys.length;
-
-      if (tableNames.has(table.tableName)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Duplicate table "${table.tableName}" is not allowed.`,
-          path: ['tables', index, 'tableName'],
-        });
-      }
-
-      tableNames.add(table.tableName);
-    });
+    const totalKeyCount = tables.reduce((count, table) => count + table.keys.length, 0);
 
     if (totalKeyCount > 100) {
       ctx.addIssue({
@@ -73,7 +127,7 @@ export const customBatchGetCmdInputSch = z
     }
   });
 
-export type CustomBatchGetCmdInput = z.infer<typeof customBatchGetCmdInputSch>;
+export type CustomBatchGetCmdInput = z.input<typeof customBatchGetCmdInputSch>;
 
 // --------------------------------------- Batch write command schemas -------------------------------------------------
 const batchWriteKeySchemaSch = z
@@ -114,27 +168,14 @@ const batchWriteTableSch = z
 export const customBatchWriteCmdInputSch = z
   .object({
     tables: z.array(batchWriteTableSch).min(1).max(25),
-    returnConsumedCapacity: z.enum(['NONE', 'TOTAL', 'INDEXES']).default('NONE'),
-    returnItemCollectionMetrics: z.enum(['NONE', 'SIZE']).default('NONE'),
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
+    returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.default('NONE'),
   })
   .strict()
   .superRefine(({ tables }, ctx) => {
-    const tableNames = new Set<string>();
-    let totalOperationCount = 0;
+    validateUniqueTableNames(tables, ctx);
 
-    tables.forEach((table, index) => {
-      totalOperationCount += table.operations.length;
-
-      if (tableNames.has(table.tableName)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Duplicate table "${table.tableName}" is not allowed.`,
-          path: ['tables', index, 'tableName'],
-        });
-      }
-
-      tableNames.add(table.tableName);
-    });
+    const totalOperationCount = tables.reduce((count, table) => count + table.operations.length, 0);
 
     if (totalOperationCount > 25) {
       ctx.addIssue({
@@ -145,7 +186,7 @@ export const customBatchWriteCmdInputSch = z
     }
   });
 
-export type CustomBatchWriteCmdInput = z.infer<typeof customBatchWriteCmdInputSch>;
+export type CustomBatchWriteCmdInput = z.input<typeof customBatchWriteCmdInputSch>;
 
 // --------------------------------------- Delete command schemas ------------------------------------------------------
 const definedExpressionValuesSch = z.record(
@@ -163,9 +204,9 @@ export const customDeleteCmdInputSch = z
     expressionAttributeNames: stringRecordSch.optional(),
     expressionAttributeValues: definedExpressionValuesSch.optional(),
     returnValues: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
-    returnValuesOnConditionCheckFailure: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
-    returnConsumedCapacity: z.enum(['NONE', 'TOTAL', 'INDEXES']).default('NONE'),
-    returnItemCollectionMetrics: z.enum(['NONE', 'SIZE']).default('NONE'),
+    returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
+    returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.default('NONE'),
   })
   .strict()
   .superRefine((input, ctx) => {
@@ -243,7 +284,7 @@ export const customDeleteCmdInputSch = z
       }
     }
   });
-export type CustomDeleteCmdInput = z.infer<typeof customDeleteCmdInputSch>;
+export type CustomDeleteCmdInput = z.input<typeof customDeleteCmdInputSch>;
 
 // --------------------------------------- Get command schemas ---------------------------------------------------------
 const projectionAttributeSch = z
@@ -284,43 +325,25 @@ export const customGetCmdInputSch = z
       });
     }
   });
-export type CustomGetCmdInput = z.infer<typeof customGetCmdInputSch>;
+export type CustomGetCmdInput = z.input<typeof customGetCmdInputSch>;
 
 // --------------------------------------- Put command schemas ---------------------------------------------------------
 export const customPutCmdInputSch = z
   .object({
-    tableName: z.string().trim().min(1),
+    tableName: trimmedRequiredStringSch,
     item: genericRecordSch,
     conditionExpression: optStringSch,
     expressionAttributeNames: stringRecordSch.optional(),
     expressionAttributeValues: genericRecordSch.optional(),
     returnValues: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
     returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
-    returnValuesOnConditionCheckFailure: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
+    returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
     returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.default('NONE'),
   })
   .strict()
-  .superRefine((input, ctx) => {
-    const hasCondition = Boolean(input.conditionExpression);
+  .superRefine((input, ctx) => validateConditionExpressionMappings(input, ctx));
 
-    if (!hasCondition && input.expressionAttributeNames) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['expressionAttributeNames'],
-        message: 'expressionAttributeNames requires conditionExpression.',
-      });
-    }
-
-    if (!hasCondition && input.expressionAttributeValues) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['expressionAttributeValues'],
-        message: 'expressionAttributeValues requires conditionExpression.',
-      });
-    }
-  });
-
-export type CustomPutCmdInput = z.infer<typeof customPutCmdInputSch>;
+export type CustomPutCmdInput = z.input<typeof customPutCmdInputSch>;
 
 // --------------------------------------- Query command schemas -------------------------------------------------------
 export const customQueryCmdInputSch = z.object({
@@ -337,24 +360,18 @@ export const customQueryCmdInputSch = z.object({
   returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
   returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.optional(),
 });
-export type CustomQueryCmdInput = z.infer<typeof customQueryCmdInputSch>;
+export type CustomQueryCmdInput = z.input<typeof customQueryCmdInputSch>;
 
 // --------------------------------------- Scan command schemas --------------------------------------------------------
 
-const scanExpressionSch = z.string().trim().min(1);
-
-const scanExpressionNamesSch = z.record(z.string().regex(/^#[A-Za-z0-9_]+$/), z.string().min(1));
-
-const scanExpressionValuesSch = z.record(z.string().regex(/^:[A-Za-z0-9_]+$/), z.unknown());
-
 export const customScanCmdInputSch = z
   .object({
-    tableName: z.string().trim().min(1),
-    indexName: z.string().trim().min(1).optional(),
-    filterExpression: scanExpressionSch.optional(),
-    projectionExpression: scanExpressionSch.optional(),
-    expressionAttributeNames: scanExpressionNamesSch.optional(),
-    expressionAttributeValues: scanExpressionValuesSch.optional(),
+    tableName: trimmedRequiredStringSch,
+    indexName: trimmedRequiredStringSch.optional(),
+    filterExpression: trimmedRequiredStringSch.optional(),
+    projectionExpression: trimmedRequiredStringSch.optional(),
+    expressionAttributeNames: expressionNamesSch.optional(),
+    expressionAttributeValues: expressionValuesSch.optional(),
     exclusiveStartKey: z
       .record(z.string().min(1), z.unknown())
       .refine((key) => Object.keys(key).length > 0, {
@@ -366,7 +383,7 @@ export const customScanCmdInputSch = z
     select: z.enum(['ALL_ATTRIBUTES', 'ALL_PROJECTED_ATTRIBUTES', 'SPECIFIC_ATTRIBUTES', 'COUNT']).optional(),
     segment: z.number().int().min(0).optional(),
     totalSegments: z.number().int().min(1).max(1_000_000).optional(),
-    returnConsumedCapacity: z.enum(['NONE', 'TOTAL', 'INDEXES']).default('NONE'),
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
   })
   .strict()
   .superRefine((input, ctx) => {
@@ -423,18 +440,9 @@ export type CustomScanCmdInput = z.input<typeof customScanCmdInputSch>;
 // --------------------------------------- Transact get command schemas ------------------------------------------------
 export const customTransactGetItemSch = z
   .object({
-    tableName: z.string().trim().min(1),
+    tableName: trimmedRequiredStringSch,
 
-    key: genericRecordSch.refine(
-      (key) => {
-        const keyCount = Object.keys(key).length;
-
-        return keyCount === 1 || keyCount === 2;
-      },
-      {
-        message: 'Key must contain exactly 1 or 2 attributes.',
-      }
-    ),
+    key: oneOrTwoAttributeRecordSch,
 
     projectionExpression: optStringSch,
 
@@ -465,15 +473,12 @@ export const customTransactGetCmdInputSch = z
 export type CustomTransactGetCmdInput = z.input<typeof customTransactGetCmdInputSch>;
 
 // --------------------------------------- Transact write command schemas ----------------------------------------------
-// --------------------------------------- Transact write command schemas ------------------------------------------------
-
-const returnValuesOnConditionCheckFailureSch = z.enum(['NONE', 'ALL_OLD']).default('NONE');
 
 const transactWritePutItemSch = z
   .object({
     operation: z.literal('PUT'),
 
-    tableName: z.string().trim().min(1),
+    tableName: trimmedRequiredStringSch,
 
     item: genericRecordSch,
 
@@ -486,40 +491,15 @@ const transactWritePutItemSch = z
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict()
-  .superRefine((input, ctx) => {
-    if (input.expressionAttributeNames && !input.conditionExpression) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['expressionAttributeNames'],
-        message: 'expressionAttributeNames requires conditionExpression for a PUT operation.',
-      });
-    }
-
-    if (input.expressionAttributeValues && !input.conditionExpression) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['expressionAttributeValues'],
-        message: 'expressionAttributeValues requires conditionExpression for a PUT operation.',
-      });
-    }
-  });
+  .superRefine((input, ctx) => validateConditionExpressionMappings(input, ctx, 'PUT'));
 
 const transactWriteUpdateItemSch = z
   .object({
     operation: z.literal('UPDATE'),
 
-    tableName: z.string().trim().min(1),
+    tableName: trimmedRequiredStringSch,
 
-    key: genericRecordSch.refine(
-      (key) => {
-        const keyCount = Object.keys(key).length;
-
-        return keyCount === 1 || keyCount === 2;
-      },
-      {
-        message: 'Key must contain exactly 1 or 2 attributes.',
-      }
-    ),
+    key: oneOrTwoAttributeRecordSch,
 
     updateExpression: z.string().trim().min(1),
 
@@ -537,18 +517,9 @@ const transactWriteDeleteItemSch = z
   .object({
     operation: z.literal('DELETE'),
 
-    tableName: z.string().trim().min(1),
+    tableName: trimmedRequiredStringSch,
 
-    key: genericRecordSch.refine(
-      (key) => {
-        const keyCount = Object.keys(key).length;
-
-        return keyCount === 1 || keyCount === 2;
-      },
-      {
-        message: 'Key must contain exactly 1 or 2 attributes.',
-      }
-    ),
+    key: oneOrTwoAttributeRecordSch,
 
     conditionExpression: optStringSch,
 
@@ -559,40 +530,15 @@ const transactWriteDeleteItemSch = z
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict()
-  .superRefine((input, ctx) => {
-    if (input.expressionAttributeNames && !input.conditionExpression) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['expressionAttributeNames'],
-        message: 'expressionAttributeNames requires conditionExpression for a DELETE operation.',
-      });
-    }
-
-    if (input.expressionAttributeValues && !input.conditionExpression) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['expressionAttributeValues'],
-        message: 'expressionAttributeValues requires conditionExpression for a DELETE operation.',
-      });
-    }
-  });
+  .superRefine((input, ctx) => validateConditionExpressionMappings(input, ctx, 'DELETE'));
 
 const transactWriteConditionCheckItemSch = z
   .object({
     operation: z.literal('CONDITION_CHECK'),
 
-    tableName: z.string().trim().min(1),
+    tableName: trimmedRequiredStringSch,
 
-    key: genericRecordSch.refine(
-      (key) => {
-        const keyCount = Object.keys(key).length;
-
-        return keyCount === 1 || keyCount === 2;
-      },
-      {
-        message: 'Key must contain exactly 1 or 2 attributes.',
-      }
-    ),
+    key: oneOrTwoAttributeRecordSch,
 
     conditionExpression: z.string().trim().min(1),
 
@@ -629,10 +575,7 @@ export const customTransactWriteCmdInputSch = z
 export type CustomTransactWriteCmdInput = z.input<typeof customTransactWriteCmdInputSch>;
 // --------------------------------------- Update command schemas ------------------------------------------------------
 
-// --------------------------------------- Update command schemas ------------------------------------------------
-const updateNativeValueSch = z.unknown();
-
-const updateRecordSch = z.record(z.string().min(1), updateNativeValueSch).superRefine((record, ctx) => {
+const updateRecordSch = z.record(z.string().min(1), z.unknown()).superRefine((record, ctx) => {
   const validate = (value: unknown, path: PropertyKey[], ancestors: Set<object>): void => {
     if (value === undefined) {
       ctx.addIssue({
@@ -756,27 +699,21 @@ const updateKeySch = z
     }
   );
 
-const updateNameTokenSch = z.string().regex(/^#[A-Za-z0-9_]+$/);
-const updateValueTokenSch = z.string().regex(/^:[A-Za-z0-9_]+$/);
-
-const updateExpressionNamesSch = z.record(updateNameTokenSch, z.string().min(1));
-const updateExpressionValuesSch = z.record(updateValueTokenSch, z.unknown());
-
 export const customUpdateCmdInputSch = z
   .object({
-    tableName: z.string().trim().min(1),
+    tableName: trimmedRequiredStringSch,
     key: updateKeySch,
     item: updateRecordSch.optional(),
-    updateExpression: z.string().trim().min(1).optional(),
-    conditionExpression: z.string().trim().min(1).optional(),
-    expressionAttributeNames: updateExpressionNamesSch.optional(),
-    expressionAttributeValues: updateExpressionValuesSch.optional(),
-    extraExpAttributeNames: updateExpressionNamesSch.optional(),
-    extraExpAttributeValues: updateExpressionValuesSch.optional(),
-    returnValues: z.enum(['NONE', 'ALL_OLD', 'UPDATED_OLD', 'ALL_NEW', 'UPDATED_NEW']).default('NONE'),
-    returnValuesOnConditionCheckFailure: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
-    returnConsumedCapacity: z.enum(['NONE', 'TOTAL', 'INDEXES']).default('NONE'),
-    returnItemCollectionMetrics: z.enum(['NONE', 'SIZE']).default('NONE'),
+    updateExpression: trimmedRequiredStringSch.optional(),
+    conditionExpression: trimmedRequiredStringSch.optional(),
+    expressionAttributeNames: expressionNamesSch.optional(),
+    expressionAttributeValues: expressionValuesSch.optional(),
+    extraExpAttributeNames: expressionNamesSch.optional(),
+    extraExpAttributeValues: expressionValuesSch.optional(),
+    returnValues: returnValuesOptionsSch.default('NONE'),
+    returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
+    returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.default('NONE'),
   })
   .strict()
   .superRefine((input, ctx) => {
