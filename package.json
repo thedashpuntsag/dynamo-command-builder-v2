@@ -28,6 +28,10 @@
     "test": "vp test run --passWithNoTests",
     "test:watch": "vp test",
     "test:coverage": "vp test run --coverage --passWithNoTests",
+    "local:dynamo:start": "docker compose up -d dynamodb-local",
+    "local:dynamo:seed": "vp exec tsx scripts/local-test.seed.ts",
+    "local:dynamo:logs": "docker compose logs -f dynamodb-local",
+    "local:dynamo:stop": "docker compose down",
     "lint": "vp lint .",
     "lint:fix": "vp lint . --fix",
     "typecheck": "tsc --noEmit",
@@ -76,8 +80,9 @@
     "globals": "^17.13.0",
     "husky": "^9.1.7",
     "jiti": "^2.7.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
-    "vitest": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   }
 }

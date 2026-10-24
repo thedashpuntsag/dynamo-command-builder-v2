@@ -18,6 +18,8 @@ pnpm check
 
 The `check` command verifies formatting, linting, types, tests, and the production build.
 
+Integration tests can run against the included in-memory DynamoDB Local service. See [Testing with DynamoDB Local](./docs/local-test.md) for setup, configuration, and cleanup instructions.
+
 ## License
 
 [MIT](./LICENSE)
