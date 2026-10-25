@@ -1,7 +1,77 @@
+# Local DynamoDB with persistent storage and a browser UI.
+#
+# Start:          docker compose up -d
+# Stop:           docker compose down
+# View logs:      docker compose logs -f
+# Reset database: docker compose down -v
+#                 WARNING: deletes this Compose project's volumes and data.
+#
+# Default endpoints:
+#   Application on host: http://localhost:8000
+#   Browser UI:          http://localhost:8001
+#   Other containers:    http://dynamodb-local:8000
+#
+# Optional environment variables (.env or shell):
+#   DYNAMODB_LOCAL_PORT=8000
+#   DYNAMODB_ADMIN_PORT=8001
+#
+# Uses local credentials and endpoints; AWS credentials are unnecessary.
+# See doc/local-development.md for application configuration.
+
 services:
   dynamodb-local:
-    image: amazon/dynamodb-local:2.6.1
-    command: -jar DynamoDBLocal.jar -inMemory -sharedDb
+    image: amazon/dynamodb-local:2.5.4
+    working_dir: /home/dynamodblocal
+
+    # -sharedDb: all regions and credentials use one database.
+    # -dbPath: persist data in the named volume instead of memory.
+    command:
+      - "-jar"
+      - "DynamoDBLocal.jar"
+      - "-sharedDb"
+      - "-dbPath"
+      - "/home/dynamodblocal/data"
+
+    # Allows writing to a Docker-managed volume initially owned by root.
+    # Intended for local development.
+    user: "0:0"
+
+    # Bind only to localhost to prevent access from other computers.
     ports:
-      - "${DYNAMODB_LOCAL_PORT:-8000}:8000"
+      - "127.0.0.1:${DYNAMODB_LOCAL_PORT:-8000}:8000"
+
+    # Survives container recreation and `docker compose down`.
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+
     restart: unless-stopped
+
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin:4.6.1
+
+    environment:
+      # Listen on the container's network interface for port forwarding.
+      HOST: "0.0.0.0"
+      PORT: "8001"
+
+      # Container connections use the service name and internal port.
+      # Changing DYNAMODB_LOCAL_PORT does not change this address.
+      DYNAMO_ENDPOINT: "http://dynamodb-local:8000"
+
+      # Dummy credentials satisfy the SDK's configuration requirements.
+      # With -sharedDb, these values do not select a separate database.
+      AWS_REGION: "ap-southeast-1"
+      AWS_ACCESS_KEY_ID: "local"
+      AWS_SECRET_ACCESS_KEY: "local"
+
+    ports:
+      - "127.0.0.1:${DYNAMODB_ADMIN_PORT:-8001}:8001"
+
+    # Controls startup order; does not guarantee database readiness.
+    depends_on:
+      - dynamodb-local
+
+    restart: unless-stopped
+
+volumes:
+  dynamodb-data:
