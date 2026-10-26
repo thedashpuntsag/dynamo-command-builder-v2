@@ -1,4 +1,10 @@
-import { CustomQueryCmdInput, customQueryCmdInputSch, QueryKeyValue, QuerySortCondition } from '@/types';
+import {
+  CustomQueryCmdInput,
+  customQueryCmdInputSch,
+  QueryFilterCondition,
+  QueryKeyValue,
+  QuerySortCondition,
+} from '@/types';
 import { extractExpAttributeNamesFromExpression } from '@/utils';
 import type { QueryCommandInput } from '@aws-sdk/lib-dynamodb';
 
@@ -9,6 +15,20 @@ type ExpressionState = {
   occupiedValueTokens: Set<string>;
 };
 
+type QueryFilterOperatorCondition =
+  | { eq: unknown }
+  | { ne: unknown }
+  | { lt: unknown }
+  | { lte: unknown }
+  | { gt: unknown }
+  | { gte: unknown }
+  | { between: [unknown, unknown] }
+  | { beginsWith: string | Uint8Array }
+  | { contains: unknown }
+  | { notContains: unknown }
+  | { exists: true }
+  | { notExists: true };
+
 /**
  * Validates input and builds an AWS SDK DocumentClient `QueryCommandInput`.
  *
@@ -17,9 +37,10 @@ type ExpressionState = {
  * 2. Generate equality conditions for one to four named partition keys.
  * 3. Generate ordered conditions for up to four named sort keys.
  * 4. Generate collision-safe expression name and value tokens.
- * 5. Merge tokens referenced by filter and projection expressions.
- * 6. Attach index, pagination, consistency, ordering, and response options.
- * 7. Return the validated `QueryCommandInput`.
+ * 5. Generate structured filter and projection expressions when requested.
+ * 6. Merge tokens referenced by raw filter and projection expressions.
+ * 7. Attach index, pagination, consistency, ordering, and response options.
+ * 8. Return the validated `QueryCommandInput`.
  *
  * ### Notes:
  * - No table, index, or entity definition is required.
@@ -27,6 +48,8 @@ type ExpressionState = {
  * - Native JavaScript values are passed directly to `@aws-sdk/lib-dynamodb`.
  * - Plain sort-key values generate equality conditions.
  * - A range condition must be the final sort-key entry.
+ * - Structured filters and projection attributes avoid manual expression tokens.
+ * - Raw filter and projection expressions remain available for advanced use cases.
  * - Caller-provided expression mappings are retained only when referenced.
  * - The builder does not execute AWS operations.
  * - DynamoDB remains responsible for validating keys against the target table or index.
@@ -37,7 +60,9 @@ type ExpressionState = {
  *   tableName: 'Orders',
  *   indexName: 'byTenantAndDate',
  *   partitionKeys: { tenantId: 'tenant-1', region: 'MN' },
- *   sortKeys: { year: 2026, createdAt: { between: [100, 200] } }
+ *   sortKeys: { year: 2026, createdAt: { between: [100, 200] } },
+ *   filters: { status: 'ACTIVE', total: { gte: 1000 } },
+ *   attributes: ['orderId', 'status', 'total']
  * })
  *
  * // input:
@@ -47,11 +72,16 @@ type ExpressionState = {
  * //   KeyConditionExpression:
  * //     '#pk0 = :pk0 AND #pk1 = :pk1 AND #sk0 = :sk0 AND #sk1 BETWEEN :sk1Start AND :sk1End',
  * //   ExpressionAttributeNames: {
- * //     '#pk0': 'tenantId', '#pk1': 'region', '#sk0': 'year', '#sk1': 'createdAt'
+ * //     '#pk0': 'tenantId', '#pk1': 'region', '#sk0': 'year', '#sk1': 'createdAt',
+ * //     '#filter0': 'status', '#filter1': 'total',
+ * //     '#projection0_0': 'orderId', '#projection1_0': 'status', '#projection2_0': 'total'
  * //   },
  * //   ExpressionAttributeValues: {
- * //     ':pk0': 'tenant-1', ':pk1': 'MN', ':sk0': 2026, ':sk1Start': 100, ':sk1End': 200
+ * //     ':pk0': 'tenant-1', ':pk1': 'MN', ':sk0': 2026, ':sk1Start': 100, ':sk1End': 200,
+ * //     ':filter0': 'ACTIVE', ':filter1': 1000
  * //   },
+ * //   FilterExpression: '#filter0 = :filter0 AND #filter1 >= :filter1',
+ * //   ProjectionExpression: '#projection0_0, #projection1_0, #projection2_0',
  * //   ConsistentRead: false,
  * //   ScanIndexForward: true,
  * //   ReturnConsumedCapacity: 'NONE'
@@ -66,11 +96,21 @@ export function buildValidatedQueryCommand(input: CustomQueryCmdInput): QueryCom
   try {
     const parsed = customQueryCmdInputSch.parse(input);
 
+    const rawExpressions = [parsed.filterExpression, parsed.projectionExpression].filter(
+      (expression): expression is string => expression !== undefined
+    );
+    const referencedNameTokens = new Set(
+      rawExpressions.flatMap((expression) => expression.match(/#[A-Za-z0-9_]+/g) ?? [])
+    );
+    const referencedValueTokens = new Set(
+      rawExpressions.flatMap((expression) => expression.match(/:[A-Za-z0-9_]+/g) ?? [])
+    );
+
     const state: ExpressionState = {
       names: {},
       values: {},
-      occupiedNameTokens: new Set(Object.keys(parsed.expressionAttributeNames ?? {})),
-      occupiedValueTokens: new Set(Object.keys(parsed.expressionAttributeValues ?? {})),
+      occupiedNameTokens: new Set([...Object.keys(parsed.expressionAttributeNames ?? {}), ...referencedNameTokens]),
+      occupiedValueTokens: new Set([...Object.keys(parsed.expressionAttributeValues ?? {}), ...referencedValueTokens]),
     };
 
     const keyConditions: string[] = [];
@@ -88,16 +128,37 @@ export function buildValidatedQueryCommand(input: CustomQueryCmdInput): QueryCom
       keyConditions.push(buildSortCondition(state, nameToken, `sk${index}`, condition));
     });
 
-    const expressions = [parsed.filterExpression, parsed.projectionExpression].filter(
-      (expression): expression is string => expression !== undefined
-    );
-    const referencedNameTokens = new Set(
-      expressions.flatMap((expression) => expression.match(/#[A-Za-z0-9_]+/g) ?? [])
-    );
-    const referencedValueTokens = new Set(
-      expressions.flatMap((expression) => expression.match(/:[A-Za-z0-9_]+/g) ?? [])
-    );
-    const inferredNames = Object.assign({}, ...expressions.map(extractExpAttributeNamesFromExpression));
+    const structuredFilters = Object.entries(parsed.filters ?? {}).map(([attributeName, condition], index) => {
+      const nameToken = addName(state, `filter${index}`, attributeName);
+
+      return buildFilterCondition(state, nameToken, `filter${index}`, condition);
+    });
+
+    const filterParts = [...(parsed.filterExpression ? [parsed.filterExpression] : []), ...structuredFilters];
+
+    const projectionParts = parsed.projectionExpression ? [parsed.projectionExpression] : [];
+    const projectionTokensByName = new Map<string, string>();
+
+    for (const [attributeIndex, attributePath] of [...new Set(parsed.attributes ?? [])].entries()) {
+      const pathParts = attributePath.match(/[^.[\]]+|\[\d+\]/g) ?? [];
+      const projectionPath = pathParts
+        .map((pathPart, pathIndex) => {
+          if (pathPart.startsWith('[')) return pathPart;
+
+          let token = projectionTokensByName.get(pathPart);
+          if (!token) {
+            token = addName(state, `projection${attributeIndex}_${pathIndex}`, pathPart);
+            projectionTokensByName.set(pathPart, token);
+          }
+
+          return token;
+        })
+        .reduce((path, part, index) => `${path}${index > 0 && !part.startsWith('[') ? '.' : ''}${part}`, '');
+
+      projectionParts.push(projectionPath);
+    }
+
+    const inferredNames = Object.assign({}, ...rawExpressions.map(extractExpAttributeNamesFromExpression));
 
     for (const token of referencedNameTokens) {
       const attributeName = parsed.expressionAttributeNames?.[token] ?? inferredNames[token];
@@ -124,8 +185,8 @@ export function buildValidatedQueryCommand(input: CustomQueryCmdInput): QueryCom
       ScanIndexForward: parsed.scanIndexForward,
       ReturnConsumedCapacity: parsed.returnConsumedCapacity,
       ...(parsed.indexName && { IndexName: parsed.indexName }),
-      ...(parsed.filterExpression && { FilterExpression: parsed.filterExpression }),
-      ...(parsed.projectionExpression && { ProjectionExpression: parsed.projectionExpression }),
+      ...(filterParts.length > 0 && { FilterExpression: filterParts.join(` ${parsed.filterJoin} `) }),
+      ...(projectionParts.length > 0 && { ProjectionExpression: projectionParts.join(', ') }),
       ...(parsed.exclusiveStartKey && { ExclusiveStartKey: parsed.exclusiveStartKey }),
       ...(parsed.limit !== undefined && { Limit: parsed.limit }),
       ...(parsed.select && { Select: parsed.select }),
@@ -140,6 +201,52 @@ export function buildValidatedQueryCommand(input: CustomQueryCmdInput): QueryCom
 
     throw error;
   }
+}
+
+function buildFilterCondition(
+  state: ExpressionState,
+  nameToken: string,
+  tokenBase: string,
+  condition: QueryFilterCondition
+): string {
+  if (isDirectFilterValue(condition)) {
+    return `${nameToken} = ${addValue(state, tokenBase, condition)}`;
+  }
+
+  const operatorCondition = condition as QueryFilterOperatorCondition;
+
+  if ('eq' in operatorCondition) return `${nameToken} = ${addValue(state, tokenBase, operatorCondition.eq)}`;
+  if ('ne' in operatorCondition) return `${nameToken} <> ${addValue(state, tokenBase, operatorCondition.ne)}`;
+  if ('lt' in operatorCondition) return `${nameToken} < ${addValue(state, tokenBase, operatorCondition.lt)}`;
+  if ('lte' in operatorCondition) return `${nameToken} <= ${addValue(state, tokenBase, operatorCondition.lte)}`;
+  if ('gt' in operatorCondition) return `${nameToken} > ${addValue(state, tokenBase, operatorCondition.gt)}`;
+  if ('gte' in operatorCondition) return `${nameToken} >= ${addValue(state, tokenBase, operatorCondition.gte)}`;
+  if ('beginsWith' in operatorCondition) {
+    return `begins_with(${nameToken}, ${addValue(state, tokenBase, operatorCondition.beginsWith)})`;
+  }
+  if ('contains' in operatorCondition) {
+    return `contains(${nameToken}, ${addValue(state, tokenBase, operatorCondition.contains)})`;
+  }
+  if ('notContains' in operatorCondition) {
+    return `NOT contains(${nameToken}, ${addValue(state, tokenBase, operatorCondition.notContains)})`;
+  }
+  if ('exists' in operatorCondition) return `attribute_exists(${nameToken})`;
+  if ('notExists' in operatorCondition) return `attribute_not_exists(${nameToken})`;
+
+  const lowerToken = addValue(state, `${tokenBase}Start`, operatorCondition.between[0]);
+  const upperToken = addValue(state, `${tokenBase}End`, operatorCondition.between[1]);
+
+  return `${nameToken} BETWEEN ${lowerToken} AND ${upperToken}`;
+}
+
+function isDirectFilterValue(condition: QueryFilterCondition): boolean {
+  return (
+    condition === null ||
+    typeof condition !== 'object' ||
+    condition instanceof Uint8Array ||
+    Array.isArray(condition) ||
+    condition instanceof Set
+  );
 }
 
 /** Alias matching the AWS SDK command-input terminology. */
@@ -181,7 +288,7 @@ function addName(state: ExpressionState, base: string, attributeName: string): s
   return token;
 }
 
-function addValue(state: ExpressionState, base: string, value: QueryKeyValue): string {
+function addValue(state: ExpressionState, base: string, value: unknown): string {
   const token = allocateToken(state.occupiedValueTokens, `:${base}`);
   state.values[token] = value;
   return token;

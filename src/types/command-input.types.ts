@@ -398,12 +398,46 @@ const querySortKeysSch = z.record(trimmedRequiredStringSch, querySortConditionSc
   }
 });
 
+const queryFilterValueSch = z.unknown().refine((value) => value !== undefined, {
+  message: 'Filter values must not be undefined.',
+});
+
+const queryDirectFilterValueSch = z.union([
+  z.string(),
+  z.number().finite(),
+  z.bigint(),
+  z.boolean(),
+  z.null(),
+  z.instanceof(Uint8Array),
+  z.array(z.unknown()),
+  z.set(z.unknown()).min(1),
+]);
+
+const queryFilterConditionSch = z.union([
+  queryDirectFilterValueSch,
+  z.object({ eq: queryFilterValueSch }).strict(),
+  z.object({ ne: queryFilterValueSch }).strict(),
+  z.object({ lt: queryFilterValueSch }).strict(),
+  z.object({ lte: queryFilterValueSch }).strict(),
+  z.object({ gt: queryFilterValueSch }).strict(),
+  z.object({ gte: queryFilterValueSch }).strict(),
+  z.object({ between: z.tuple([queryFilterValueSch, queryFilterValueSch]) }).strict(),
+  z.object({ beginsWith: z.union([z.string(), z.instanceof(Uint8Array)]) }).strict(),
+  z.object({ contains: queryFilterValueSch }).strict(),
+  z.object({ notContains: queryFilterValueSch }).strict(),
+  z.object({ exists: z.literal(true) }).strict(),
+  z.object({ notExists: z.literal(true) }).strict(),
+]);
+
 export const customQueryCmdInputSch = z
   .object({
     tableName: trimmedRequiredStringSch,
     indexName: trimmedRequiredStringSch.optional(),
     partitionKeys: queryPartitionKeysSch,
     sortKeys: querySortKeysSch.default({}),
+    filters: z.record(trimmedRequiredStringSch, queryFilterConditionSch).optional(),
+    filterJoin: z.enum(['AND', 'OR']).default('AND'),
+    attributes: z.array(projectionAttributeSch).min(1).optional(),
     filterExpression: optStringSch,
     projectionExpression: optStringSch,
     expressionAttributeNames: expressionNamesSch.optional(),
@@ -420,7 +454,9 @@ export const customQueryCmdInputSch = z
   })
   .strict()
   .superRefine((input, ctx) => {
-    if (input.projectionExpression && input.select !== undefined && input.select !== 'SPECIFIC_ATTRIBUTES') {
+    const hasProjection = input.projectionExpression !== undefined || input.attributes !== undefined;
+
+    if (hasProjection && input.select !== undefined && input.select !== 'SPECIFIC_ATTRIBUTES') {
       ctx.addIssue({
         code: 'custom',
         path: ['select'],
@@ -428,7 +464,7 @@ export const customQueryCmdInputSch = z
       });
     }
 
-    if (input.select === 'SPECIFIC_ATTRIBUTES' && !input.projectionExpression) {
+    if (input.select === 'SPECIFIC_ATTRIBUTES' && !hasProjection) {
       ctx.addIssue({
         code: 'custom',
         path: ['projectionExpression'],
@@ -447,6 +483,7 @@ export const customQueryCmdInputSch = z
 
 export type QueryKeyValue = z.infer<typeof queryKeyValueSch>;
 export type QuerySortCondition = z.infer<typeof querySortConditionSch>;
+export type QueryFilterCondition = z.infer<typeof queryFilterConditionSch>;
 export type CustomQueryCmdInput = z.input<typeof customQueryCmdInputSch>;
 
 function validateQueryKeyRecord(

@@ -240,6 +240,7 @@ export function convertDynamoReadQueryRequestToCustomQueryInput(input: unknown):
       tableName: parsed.table,
       partitionKeys,
       sortKeys,
+      filterJoin: parsed.filterJoin,
       scanIndexForward: parsed.sorting !== 'DESC',
       ...(parsed.index && { indexName: parsed.index }),
       ...(filters.length > 0 && { filterExpression: filters.join(` ${parsed.filterJoin} `) }),

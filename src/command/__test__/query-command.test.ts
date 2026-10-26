@@ -102,6 +102,86 @@ describe('buildValidatedQueryCommand', () => {
     });
   });
 
+  it('generates expressions from structured filters and projection attributes', () => {
+    const command = build({
+      tableName: 'Orders',
+      partitionKeys: { customerId: 'cust-42' },
+      filters: {
+        status: 'ACTIVE',
+        total: { gte: 1000 },
+        archivedAt: { notExists: true },
+      },
+      attributes: ['orderId', 'status', 'customer.profile.name', 'items[0].sku'],
+    });
+
+    expect(command.FilterExpression).toBe(
+      '#filter0 = :filter0 AND #filter1 >= :filter1 AND attribute_not_exists(#filter2)'
+    );
+    expect(command.ProjectionExpression).toBe(
+      '#projection0_0, #projection1_0, #projection2_0.#projection2_1.#projection2_2, #projection3_0[0].#projection3_2'
+    );
+    expect(command.ExpressionAttributeValues).toMatchObject({
+      ':filter0': 'ACTIVE',
+      ':filter1': 1000,
+    });
+    expect(command.ExpressionAttributeNames).toMatchObject({
+      '#filter0': 'status',
+      '#filter1': 'total',
+      '#filter2': 'archivedAt',
+      '#projection0_0': 'orderId',
+      '#projection1_0': 'status',
+      '#projection2_0': 'customer',
+      '#projection2_1': 'profile',
+      '#projection2_2': 'name',
+      '#projection3_0': 'items',
+      '#projection3_2': 'sku',
+    });
+  });
+
+  it.each([
+    [{ eq: 'ACTIVE' }, '#filter0 = :filter0'],
+    [{ ne: 'DELETED' }, '#filter0 <> :filter0'],
+    [{ lt: 10 }, '#filter0 < :filter0'],
+    [{ lte: 10 }, '#filter0 <= :filter0'],
+    [{ gt: 10 }, '#filter0 > :filter0'],
+    [{ gte: 10 }, '#filter0 >= :filter0'],
+    [{ between: [10, 20] }, '#filter0 BETWEEN :filter0Start AND :filter0End'],
+    [{ beginsWith: 'ORDER#' }, 'begins_with(#filter0, :filter0)'],
+    [{ contains: 'vip' }, 'contains(#filter0, :filter0)'],
+    [{ notContains: 'blocked' }, 'NOT contains(#filter0, :filter0)'],
+    [{ exists: true }, 'attribute_exists(#filter0)'],
+    [{ notExists: true }, 'attribute_not_exists(#filter0)'],
+  ])('builds the structured filter condition %j', (condition, expectedExpression) => {
+    const command = build({
+      tableName: 'Orders',
+      partitionKeys: { customerId: 'cust-42' },
+      filters: { status: condition },
+    });
+
+    expect(command.FilterExpression).toBe(expectedExpression);
+  });
+
+  it('combines raw and structured filters with collision-safe tokens', () => {
+    const command = build({
+      tableName: 'Orders',
+      partitionKeys: { customerId: 'cust-42' },
+      filterExpression: '#filter0 = :filter0',
+      expressionAttributeValues: { ':filter0': 'PENDING' },
+      filters: { status: 'ACTIVE' },
+      filterJoin: 'OR',
+    });
+
+    expect(command.FilterExpression).toBe('#filter0 = :filter0 OR #filter0_1 = :filter0_1');
+    expect(command.ExpressionAttributeNames).toMatchObject({
+      '#filter0': 'filter0',
+      '#filter0_1': 'status',
+    });
+    expect(command.ExpressionAttributeValues).toMatchObject({
+      ':filter0': 'PENDING',
+      ':filter0_1': 'ACTIVE',
+    });
+  });
+
   it('avoids collisions with caller-provided expression tokens', () => {
     const command = build({
       tableName: 'Orders',

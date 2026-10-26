@@ -44,6 +44,7 @@ describe('convertDynamoReadQueryRequestToCustomQueryInput', () => {
         createdAt: { between: [100, 200] },
       },
       filterExpression: '#filter0 = :filter0 OR attribute_not_exists(#filter1)',
+      filterJoin: 'OR',
       expressionAttributeNames: {
         '#filter0': 'status',
         '#filter1': 'archivedAt',
@@ -154,6 +155,7 @@ describe('getCustomQueryInputFromApiGatewayEvent', () => {
       tableName: 'Orders',
       partitionKeys: { customerId: 'customer-1' },
       sortKeys: { createdAt: { gt: 100 } },
+      filterJoin: 'AND',
       limit: 25,
       consistentRead: false,
       scanIndexForward: true,
@@ -171,6 +173,7 @@ describe('getCustomQueryInputFromApiGatewayEvent', () => {
       tableName: 'Orders',
       partitionKeys: { status: 'ACTIVE' },
       sortKeys: {},
+      filterJoin: 'AND',
       consistentRead: false,
       scanIndexForward: true,
       returnConsumedCapacity: 'NONE',
