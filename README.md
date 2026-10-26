@@ -23,6 +23,7 @@ Integration tests can run against the included in-memory DynamoDB Local service.
 ## Documentation
 
 - [Query Command](./docs/query-command.md) — schema-free queries, structured filters, and projected attributes
+- [Structured condition expression design](./docs/condition-expression-design.md) — proposed complete condition AST and migration plan
 - [DynamoDB packages for TypeScript](./docs/dynamo-packages-for-typescript.md)
 - [Testing with DynamoDB Local](./docs/local-test.md)
 
