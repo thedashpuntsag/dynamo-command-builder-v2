@@ -16,6 +16,27 @@ import type { DeleteCommandInput } from '@aws-sdk/lib-dynamodb';
  * - Caller-provided expression attributes are passed through without evaluation.
  * - This function only constructs command input and does not execute an AWS request.
  *
+ * @example Conditionally delete an item
+ * ```ts
+ * const input = buildValidatedDeleteCommandInput({
+ *   tableName: 'Users',
+ *   key: { userId: 'user-1' },
+ *   conditionExpression: '#status = :status',
+ *   expressionAttributeNames: { '#status': 'status' },
+ *   expressionAttributeValues: { ':status': 'INACTIVE' }
+ * })
+ *
+ * // input:
+ * // {
+ * //   TableName: 'Users',
+ * //   Key: { userId: 'user-1' },
+ * //   ConditionExpression: '#status = :status',
+ * //   ExpressionAttributeNames: { '#status': 'status' },
+ * //   ExpressionAttributeValues: { ':status': 'INACTIVE' },
+ * //   ReturnValues: 'NONE'
+ * // }
+ * ```
+ *
  * @param input Untrusted custom delete-command input.
  * @returns Validated DynamoDB DeleteCommand input.
  */

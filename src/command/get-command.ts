@@ -30,6 +30,24 @@ import { GetCommandInput } from '@aws-sdk/lib-dynamodb';
  * - `Key` remains a native JavaScript object and is not manually marshalled.
  * - This function only constructs command input and does not execute an AWS request.
  *
+ * @example Get an item with a generated projection
+ * ```ts
+ * const input = buildValidatedGetCommand({
+ *   tableName: 'Users',
+ *   key: { userId: 'user-1' },
+ *   attributes: ['name', 'profile.email']
+ * })
+ *
+ * // input:
+ * // {
+ * //   TableName: 'Users',
+ * //   Key: { userId: 'user-1' },
+ * //   ProjectionExpression: '#attr0, #attr1.#attr2',
+ * //   ExpressionAttributeNames: { '#attr0': 'name', '#attr1': 'profile', '#attr2': 'email' },
+ * //   ConsistentRead: false
+ * // }
+ * ```
+ *
  * @param input The get-item request to validate and build.
  * @returns A validated DynamoDB DocumentClient `GetCommandInput`.
  * @throws If `input` fails schema validation or an expression alias conflicts.

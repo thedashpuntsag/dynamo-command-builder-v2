@@ -23,6 +23,27 @@ import type { PutCommandInput } from '@aws-sdk/lib-dynamodb';
  * - PutItem replaces the entire existing item with the same primary key.
  * - This function never executes an AWS request.
  *
+ * @example Create an item only when its key does not exist
+ * ```ts
+ * const input = buildValidatedPutCommand({
+ *   tableName: 'Users',
+ *   item: { userId: 'user-1', name: 'Dash' },
+ *   conditionExpression: 'attribute_not_exists(#userId)'
+ * })
+ *
+ * // input:
+ * // {
+ * //   TableName: 'Users',
+ * //   Item: { userId: 'user-1', name: 'Dash' },
+ * //   ConditionExpression: 'attribute_not_exists(#userId)',
+ * //   ExpressionAttributeNames: { '#userId': 'userId' },
+ * //   ReturnValues: 'NONE',
+ * //   ReturnConsumedCapacity: 'NONE',
+ * //   ReturnItemCollectionMetrics: 'NONE',
+ * //   ReturnValuesOnConditionCheckFailure: 'NONE'
+ * // }
+ * ```
+ *
  * @param input The put-item request to validate and build.
  * @returns A validated DynamoDB DocumentClient `PutCommandInput`.
  * @throws If input validation or expression-token validation fails.

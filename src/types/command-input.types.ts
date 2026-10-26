@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { dynamoReadPropsSch } from './command.types';
 import {
   genericRecordSch,
   optStringSch,
@@ -346,21 +345,158 @@ export const customPutCmdInputSch = z
 export type CustomPutCmdInput = z.input<typeof customPutCmdInputSch>;
 
 // --------------------------------------- Query command schemas -------------------------------------------------------
-export const customQueryCmdInputSch = z.object({
-  tableName: z.string(),
-  queryCommand: dynamoReadPropsSch,
-  keyConditionExpression: optStringSch,
-  filterExpression: optStringSch,
-  expressionAttributeNames: stringRecordSch.optional(),
-  expressionAttributeValues: genericRecordSch.optional(),
-  extraExpAttributeNames: stringRecordSch.optional(),
-  extraExpAttributeValues: genericRecordSch.optional(),
-  projectionExpression: optStringSch,
-  scanIndexForward: z.boolean().optional(),
-  returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
-  returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.optional(),
+const queryKeyValueSch = z.union([
+  z.string().min(1),
+  z.number().finite(),
+  z.bigint(),
+  z.instanceof(Uint8Array).refine((value) => value.length > 0, 'Binary key values must not be empty.'),
+]);
+
+const queryPartitionKeysSch = z
+  .record(trimmedRequiredStringSch, queryKeyValueSch)
+  .superRefine((keys, ctx) => validateQueryKeyRecord(keys, 1, 4, ctx));
+
+const querySortConditionSch = z.union([
+  queryKeyValueSch,
+  z.object({ eq: queryKeyValueSch }).strict(),
+  z.object({ lt: queryKeyValueSch }).strict(),
+  z.object({ lte: queryKeyValueSch }).strict(),
+  z.object({ gt: queryKeyValueSch }).strict(),
+  z.object({ gte: queryKeyValueSch }).strict(),
+  z
+    .object({ between: z.tuple([queryKeyValueSch, queryKeyValueSch]) })
+    .strict()
+    .refine(({ between }) => areQueryKeyValuesCompatible(between[0], between[1]), {
+      message: 'BETWEEN values must use compatible key types.',
+    }),
+  z
+    .object({ beginsWith: z.union([z.string().min(1), z.instanceof(Uint8Array)]) })
+    .strict()
+    .refine(({ beginsWith }) => typeof beginsWith === 'string' || beginsWith.length > 0, {
+      message: 'beginsWith binary values must not be empty.',
+    }),
+]);
+
+const querySortKeysSch = z.record(trimmedRequiredStringSch, querySortConditionSch).superRefine((keys, ctx) => {
+  validateQueryKeyRecord(keys, 0, 4, ctx);
+
+  const entries = Object.entries(keys);
+  const rangeIndex = entries.findIndex(([, condition]) => isQueryRangeCondition(condition));
+
+  if (rangeIndex >= 0 && rangeIndex !== entries.length - 1) {
+    ctx.addIssue({
+      code: 'custom',
+      path: [entries[rangeIndex]?.[0] ?? 'sortKeys'],
+      message: 'A non-equality sort-key condition must be the final sort-key entry.',
+    });
+  }
+
+  if (rangeIndex >= 0 && entries.slice(rangeIndex + 1).some(([, condition]) => isQueryRangeCondition(condition))) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Only the final sort key may use a non-equality condition.',
+    });
+  }
 });
+
+export const customQueryCmdInputSch = z
+  .object({
+    tableName: trimmedRequiredStringSch,
+    indexName: trimmedRequiredStringSch.optional(),
+    partitionKeys: queryPartitionKeysSch,
+    sortKeys: querySortKeysSch.default({}),
+    filterExpression: optStringSch,
+    projectionExpression: optStringSch,
+    expressionAttributeNames: expressionNamesSch.optional(),
+    expressionAttributeValues: expressionValuesSch.optional(),
+    exclusiveStartKey: z
+      .record(z.string().min(1), z.unknown())
+      .refine((key) => Object.keys(key).length > 0, 'ExclusiveStartKey must not be empty.')
+      .optional(),
+    limit: z.number().int().positive().optional(),
+    consistentRead: z.boolean().default(false),
+    scanIndexForward: z.boolean().default(true),
+    select: z.enum(['ALL_ATTRIBUTES', 'ALL_PROJECTED_ATTRIBUTES', 'SPECIFIC_ATTRIBUTES', 'COUNT']).optional(),
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.projectionExpression && input.select !== undefined && input.select !== 'SPECIFIC_ATTRIBUTES') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['select'],
+        message: 'ProjectionExpression requires Select to be SPECIFIC_ATTRIBUTES or omitted.',
+      });
+    }
+
+    if (input.select === 'SPECIFIC_ATTRIBUTES' && !input.projectionExpression) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['projectionExpression'],
+        message: 'SPECIFIC_ATTRIBUTES requires projectionExpression.',
+      });
+    }
+
+    if (input.select === 'ALL_PROJECTED_ATTRIBUTES' && !input.indexName) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['select'],
+        message: 'ALL_PROJECTED_ATTRIBUTES requires indexName.',
+      });
+    }
+  });
+
+export type QueryKeyValue = z.infer<typeof queryKeyValueSch>;
+export type QuerySortCondition = z.infer<typeof querySortConditionSch>;
 export type CustomQueryCmdInput = z.input<typeof customQueryCmdInputSch>;
+
+function validateQueryKeyRecord(
+  keys: Record<string, unknown>,
+  minimum: number,
+  maximum: number,
+  ctx: z.RefinementCtx
+): void {
+  const names = Object.keys(keys);
+
+  if (names.length < minimum || names.length > maximum) {
+    ctx.addIssue({
+      code: 'custom',
+      message: `Key record must contain between ${minimum} and ${maximum} attributes.`,
+    });
+  }
+
+  for (const name of names) {
+    if (/^(0|[1-9]\d*)$/.test(name)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [name],
+        message: 'Integer-like attribute names are not supported because their object order is unstable.',
+      });
+    }
+  }
+}
+
+function isQueryRangeCondition(condition: QuerySortCondition): boolean {
+  return (
+    typeof condition === 'object' &&
+    condition !== null &&
+    !(condition instanceof Uint8Array) &&
+    !Object.hasOwn(condition, 'eq')
+  );
+}
+
+function areQueryKeyValuesCompatible(left: QueryKeyValue, right: QueryKeyValue): boolean {
+  if (left instanceof Uint8Array || right instanceof Uint8Array) {
+    return left instanceof Uint8Array && right instanceof Uint8Array;
+  }
+
+  const leftIsNumber = typeof left === 'number' || typeof left === 'bigint';
+  const rightIsNumber = typeof right === 'number' || typeof right === 'bigint';
+
+  if (leftIsNumber || rightIsNumber) return leftIsNumber && rightIsNumber;
+
+  return typeof left === typeof right;
+}
 
 // --------------------------------------- Scan command schemas --------------------------------------------------------
 

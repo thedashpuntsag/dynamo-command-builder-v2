@@ -21,6 +21,25 @@ import { TransactGetCommandInput } from '@aws-sdk/lib-dynamodb';
  * - The order of `TransactItems` is preserved.
  * - This function only constructs command input and never executes an AWS request.
  *
+ * @example Read two items atomically
+ * ```ts
+ * const input = buildValidatedTransactGetCommand({
+ *   transactItems: [
+ *     { tableName: 'Users', key: { userId: 'user-1' } },
+ *     { tableName: 'Accounts', key: { accountId: 'account-1' } }
+ *   ]
+ * })
+ *
+ * // input:
+ * // {
+ * //   TransactItems: [
+ * //     { Get: { TableName: 'Users', Key: { userId: 'user-1' } } },
+ * //     { Get: { TableName: 'Accounts', Key: { accountId: 'account-1' } } }
+ * //   ],
+ * //   ReturnConsumedCapacity: 'NONE'
+ * // }
+ * ```
+ *
  * @param input The transact-get input to validate and build.
  * @returns A validated DynamoDB DocumentClient `TransactGetCommandInput`.
  * @throws If the input fails schema validation.

@@ -22,6 +22,26 @@ import type { UpdateCommandInput } from '@aws-sdk/lib-dynamodb';
  * - The builder does not execute AWS operations.
  * - The AWS service remains responsible for full expression validation.
  *
+ * @example Generate a SET expression from an item patch
+ * ```ts
+ * const input = buildValidatedUpdateCommand({
+ *   tableName: 'Users',
+ *   key: { userId: 'user-1' },
+ *   item: { name: 'Dash', active: true },
+ *   returnValues: 'ALL_NEW'
+ * })
+ *
+ * // input:
+ * // {
+ * //   TableName: 'Users',
+ * //   Key: { userId: 'user-1' },
+ * //   UpdateExpression: 'SET #updateAttr0 = :updateVal0, #updateAttr1 = :updateVal1',
+ * //   ExpressionAttributeNames: { '#updateAttr0': 'name', '#updateAttr1': 'active' },
+ * //   ExpressionAttributeValues: { ':updateVal0': 'Dash', ':updateVal1': true },
+ * //   ReturnValues: 'ALL_NEW'
+ * // }
+ * ```
+ *
  * @param input The custom update request.
  * @returns A validated DocumentClient `UpdateCommandInput`.
  * @throws On schema, mapping, or expression-token validation errors.

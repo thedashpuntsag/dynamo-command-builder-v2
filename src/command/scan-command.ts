@@ -56,6 +56,29 @@ function extractExpressionTokens(expressions: string[]): ExpressionTokens {
  * - Limit controls items evaluated, not necessarily items returned.
  * - Does not execute AWS requests.
  *
+ * @example Scan an index with a filter
+ * ```ts
+ * const input = buildValidatedScanCommand({
+ *   tableName: 'Orders',
+ *   indexName: 'byStatus',
+ *   filterExpression: '#status = :status',
+ *   expressionAttributeValues: { ':status': 'ACTIVE' },
+ *   limit: 25
+ * })
+ *
+ * // input:
+ * // {
+ * //   TableName: 'Orders',
+ * //   IndexName: 'byStatus',
+ * //   FilterExpression: '#status = :status',
+ * //   ExpressionAttributeNames: { '#status': 'status' },
+ * //   ExpressionAttributeValues: { ':status': 'ACTIVE' },
+ * //   Limit: 25,
+ * //   ConsistentRead: false,
+ * //   ReturnConsumedCapacity: 'NONE'
+ * // }
+ * ```
+ *
  * @param input The custom scan request.
  * @returns A validated DocumentClient `ScanCommandInput`.
  * @throws On schema or expression-token validation errors.

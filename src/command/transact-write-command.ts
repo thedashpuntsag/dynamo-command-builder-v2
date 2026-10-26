@@ -29,6 +29,22 @@ import { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
  *   the transaction is cancelled.
  * - This function only constructs command input and never executes an AWS request.
  *
+ * @example Write and delete items atomically
+ * ```ts
+ * const input = buildValidatedTransactWriteCommand({
+ *   transactItems: [
+ *     { operation: 'PUT', tableName: 'Users', item: { userId: 'user-1', name: 'Dash' } },
+ *     { operation: 'DELETE', tableName: 'Invites', key: { inviteId: 'invite-1' } }
+ *   ]
+ * })
+ *
+ * // input.TransactItems:
+ * // [
+ * //   { Put: { TableName: 'Users', Item: { userId: 'user-1', name: 'Dash' } } },
+ * //   { Delete: { TableName: 'Invites', Key: { inviteId: 'invite-1' } } }
+ * // ]
+ * ```
+ *
  * @param input The transact-write input to validate and build.
  * @returns A validated DynamoDB DocumentClient `TransactWriteCommandInput`.
  * @throws If the input fails schema validation.

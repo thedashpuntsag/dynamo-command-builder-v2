@@ -26,19 +26,19 @@ services:
     # -sharedDb: all regions and credentials use one database.
     # -dbPath: persist data in the named volume instead of memory.
     command:
-      - "-jar"
-      - "DynamoDBLocal.jar"
-      - "-sharedDb"
-      - "-dbPath"
-      - "/home/dynamodblocal/data"
+      - '-jar'
+      - 'DynamoDBLocal.jar'
+      - '-sharedDb'
+      - '-dbPath'
+      - '/home/dynamodblocal/data'
 
     # Allows writing to a Docker-managed volume initially owned by root.
     # Intended for local development.
-    user: "0:0"
+    user: '0:0'
 
     # Bind only to localhost to prevent access from other computers.
     ports:
-      - "127.0.0.1:${DYNAMODB_LOCAL_PORT:-8000}:8000"
+      - '127.0.0.1:${DYNAMODB_LOCAL_PORT:-8000}:8000'
 
     # Survives container recreation and `docker compose down`.
     volumes:
@@ -51,21 +51,21 @@ services:
 
     environment:
       # Listen on the container's network interface for port forwarding.
-      HOST: "0.0.0.0"
-      PORT: "8001"
+      HOST: '0.0.0.0'
+      PORT: '8001'
 
       # Container connections use the service name and internal port.
       # Changing DYNAMODB_LOCAL_PORT does not change this address.
-      DYNAMO_ENDPOINT: "http://dynamodb-local:8000"
+      DYNAMO_ENDPOINT: 'http://dynamodb-local:8000'
 
       # Dummy credentials satisfy the SDK's configuration requirements.
       # With -sharedDb, these values do not select a separate database.
-      AWS_REGION: "ap-southeast-1"
-      AWS_ACCESS_KEY_ID: "local"
-      AWS_SECRET_ACCESS_KEY: "local"
+      AWS_REGION: 'ap-southeast-1'
+      AWS_ACCESS_KEY_ID: 'local'
+      AWS_SECRET_ACCESS_KEY: 'local'
 
     ports:
-      - "127.0.0.1:${DYNAMODB_ADMIN_PORT:-8001}:8001"
+      - '127.0.0.1:${DYNAMODB_ADMIN_PORT:-8001}:8001'
 
     # Controls startup order; does not guarantee database readiness.
     depends_on:

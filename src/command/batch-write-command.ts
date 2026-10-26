@@ -102,6 +102,28 @@ function createKeySignature(key: Record<string, unknown>): string {
  * - `DeleteRequest.Key` is derived from the provided key schema.
  * - This function only constructs command input and does not execute an AWS request.
  *
+ * @example Put and delete items in one batch
+ * ```ts
+ * const input = buildValidatedBatchWriteCommandInput({
+ *   tables: [{
+ *     tableName: 'Users',
+ *     keySchema: { partitionKey: 'userId' },
+ *     operations: [
+ *       { operation: 'PUT', item: { userId: 'user-1', name: 'Dash' } },
+ *       { operation: 'DELETE', key: { userId: 'user-2' } }
+ *     ]
+ *   }]
+ * })
+ *
+ * // input.RequestItems:
+ * // {
+ * //   Users: [
+ * //     { PutRequest: { Item: { userId: 'user-1', name: 'Dash' } } },
+ * //     { DeleteRequest: { Key: { userId: 'user-2' } } }
+ * //   ]
+ * // }
+ * ```
+ *
  * @param input Untrusted custom batch-write input.
  * @returns Validated DynamoDB BatchWriteCommandInput.
  */

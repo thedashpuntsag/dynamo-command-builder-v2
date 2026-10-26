@@ -16,6 +16,30 @@ import { BatchGetCommandInput } from '@aws-sdk/lib-dynamodb';
  * - Projection attributes are de-duplicated and always include primary-key attributes.
  * - This function only constructs command input and does not execute an AWS request.
  *
+ * @example Get several users in one request
+ * ```ts
+ * const input = buildValidatedBatchGetCommand({
+ *   tables: [{
+ *     tableName: 'Users',
+ *     keys: [{ userId: 'user-1' }, { userId: 'user-2' }],
+ *     attributes: ['name']
+ *   }]
+ * })
+ *
+ * // input:
+ * // {
+ * //   RequestItems: {
+ * //     Users: {
+ * //       Keys: [{ userId: 'user-1' }, { userId: 'user-2' }],
+ * //       ConsistentRead: false,
+ * //       ProjectionExpression: '#attr0, #attr1',
+ * //       ExpressionAttributeNames: { '#attr0': 'userId', '#attr1': 'name' }
+ * //     }
+ * //   },
+ * //   ReturnConsumedCapacity: 'NONE'
+ * // }
+ * ```
+ *
  * @param input The untrusted input to validate.
  * @returns The constructed BatchGetCommandInput.
  */
