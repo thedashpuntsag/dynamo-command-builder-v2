@@ -25,7 +25,7 @@ type ExpressionState = {
  * - No table, index, or entity definition is required.
  * - Partition and sort keys are supplied as attribute-name keyed objects.
  * - Native JavaScript values are passed directly to `@aws-sdk/lib-dynamodb`.
- * - Plain sort-key values and `{ eq: value }` generate equality conditions.
+ * - Plain sort-key values generate equality conditions.
  * - A range condition must be the final sort-key entry.
  * - Caller-provided expression mappings are retained only when referenced.
  * - The builder does not execute AWS operations.
@@ -155,7 +155,6 @@ function buildSortCondition(
     return `${nameToken} = ${addValue(state, tokenBase, condition)}`;
   }
 
-  if ('eq' in condition) return `${nameToken} = ${addValue(state, tokenBase, condition.eq)}`;
   if ('lt' in condition) return `${nameToken} < ${addValue(state, tokenBase, condition.lt)}`;
   if ('lte' in condition) return `${nameToken} <= ${addValue(state, tokenBase, condition.lte)}`;
   if ('gt' in condition) return `${nameToken} > ${addValue(state, tokenBase, condition.gt)}`;

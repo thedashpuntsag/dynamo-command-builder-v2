@@ -36,7 +36,7 @@ describe('buildValidatedQueryCommand', () => {
       },
       sortKeys: {
         year: 2026,
-        month: { eq: 10 },
+        month: 10,
         createdAt: { between: [100, 200] },
       },
     });

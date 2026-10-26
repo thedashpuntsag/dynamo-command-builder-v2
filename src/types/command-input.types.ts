@@ -358,7 +358,6 @@ const queryPartitionKeysSch = z
 
 const querySortConditionSch = z.union([
   queryKeyValueSch,
-  z.object({ eq: queryKeyValueSch }).strict(),
   z.object({ lt: queryKeyValueSch }).strict(),
   z.object({ lte: queryKeyValueSch }).strict(),
   z.object({ gt: queryKeyValueSch }).strict(),
@@ -477,12 +476,7 @@ function validateQueryKeyRecord(
 }
 
 function isQueryRangeCondition(condition: QuerySortCondition): boolean {
-  return (
-    typeof condition === 'object' &&
-    condition !== null &&
-    !(condition instanceof Uint8Array) &&
-    !Object.hasOwn(condition, 'eq')
-  );
+  return typeof condition === 'object' && condition !== null && !(condition instanceof Uint8Array);
 }
 
 function areQueryKeyValuesCompatible(left: QueryKeyValue, right: QueryKeyValue): boolean {
@@ -577,11 +571,8 @@ export type CustomScanCmdInput = z.input<typeof customScanCmdInputSch>;
 export const customTransactGetItemSch = z
   .object({
     tableName: trimmedRequiredStringSch,
-
     key: oneOrTwoAttributeRecordSch,
-
     projectionExpression: optStringSch,
-
     expressionAttributeNames: stringRecordSch.optional(),
   })
   .strict()
@@ -613,17 +604,11 @@ export type CustomTransactGetCmdInput = z.input<typeof customTransactGetCmdInput
 const transactWritePutItemSch = z
   .object({
     operation: z.literal('PUT'),
-
     tableName: trimmedRequiredStringSch,
-
     item: genericRecordSch,
-
     conditionExpression: optStringSch,
-
     expressionAttributeNames: stringRecordSch.optional(),
-
     expressionAttributeValues: genericRecordSch.optional(),
-
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict()
@@ -632,19 +617,12 @@ const transactWritePutItemSch = z
 const transactWriteUpdateItemSch = z
   .object({
     operation: z.literal('UPDATE'),
-
     tableName: trimmedRequiredStringSch,
-
     key: oneOrTwoAttributeRecordSch,
-
     updateExpression: z.string().trim().min(1),
-
     conditionExpression: optStringSch,
-
     expressionAttributeNames: stringRecordSch.optional(),
-
     expressionAttributeValues: genericRecordSch.optional(),
-
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict();
@@ -652,17 +630,11 @@ const transactWriteUpdateItemSch = z
 const transactWriteDeleteItemSch = z
   .object({
     operation: z.literal('DELETE'),
-
     tableName: trimmedRequiredStringSch,
-
     key: oneOrTwoAttributeRecordSch,
-
     conditionExpression: optStringSch,
-
     expressionAttributeNames: stringRecordSch.optional(),
-
     expressionAttributeValues: genericRecordSch.optional(),
-
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict()
@@ -671,17 +643,11 @@ const transactWriteDeleteItemSch = z
 const transactWriteConditionCheckItemSch = z
   .object({
     operation: z.literal('CONDITION_CHECK'),
-
     tableName: trimmedRequiredStringSch,
-
     key: oneOrTwoAttributeRecordSch,
-
     conditionExpression: z.string().trim().min(1),
-
     expressionAttributeNames: stringRecordSch.optional(),
-
     expressionAttributeValues: genericRecordSch.optional(),
-
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict();
@@ -699,11 +665,8 @@ export const customTransactWriteCmdInputSch = z
       .array(customTransactWriteItemSch)
       .min(1, 'At least one transact write item is required.')
       .max(100, 'A transact write can contain at most 100 operations.'),
-
     clientRequestToken: z.string().trim().min(1).max(36).optional(),
-
     returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
-
     returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.default('NONE'),
   })
   .strict();
