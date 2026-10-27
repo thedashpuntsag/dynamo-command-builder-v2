@@ -9,7 +9,7 @@ export default defineConfig({
     // https://vitest.dev/guide/migration/#clearmocks-is-enabled-by-default
     clearMocks: false,
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'test/playground/tests/**/*.test.ts'],
     exclude: ['node_modules', 'dist', '.serverless', '.webpack', '_warmup'],
     coverage: {
       provider: 'v8',
