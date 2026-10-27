@@ -5,7 +5,7 @@
     "lib": ["ES2022"],
     "types": ["node"],
     "declaration": true,
-    "declarationMap": true,
+    "declarationMap": false,
     "outDir": "./dist",
     "rootDir": "./src",
     "moduleResolution": "bundler",
@@ -19,7 +19,7 @@
       "@/*": ["./src/*"]
     },
     "removeComments": true,
-    "sourceMap": true,
+    "sourceMap": false,
     "noUnusedParameters": true,
     "noUnusedLocals": true,
     "noFallthroughCasesInSwitch": true,
