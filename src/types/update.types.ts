@@ -1,3 +1,5 @@
+import { dynamoNumericValueSch } from './key.types';
+import type { ExclusiveUnion } from './utility.types';
 import { z } from 'zod';
 import { conditionPathSch } from './condition.types';
 import { dynamoValueSch } from './dynamo-value.types';
@@ -6,7 +8,7 @@ const updatePathSch = conditionPathSch.refine(
   (path) => (path.match(/\[\d+\]/g) ?? []).every((index) => Number.isSafeInteger(Number(index.slice(1, -1)))),
   'List indexes must be safe nonnegative integers.'
 );
-const numberSch = z.union([z.number().finite(), z.bigint()]);
+const numberSch = dynamoNumericValueSch;
 const setSch = z.instanceof(Set).superRefine((value, ctx) => {
   const result = dynamoValueSch.safeParse(value);
   if (!result.success)
@@ -15,7 +17,7 @@ const setSch = z.instanceof(Set).superRefine((value, ctx) => {
 const listSch = z.array(dynamoValueSch);
 
 /** Each structured update names an attribute path and exactly one operation. */
-export type UpdateOperation = { attr: string } & (
+export type UpdateOperation = { attr: string } & ExclusiveUnion<
   | { set: unknown }
   | { remove: true }
   | { add: number | bigint | ReadonlySet<unknown> }
@@ -26,7 +28,7 @@ export type UpdateOperation = { attr: string } & (
   | { prepend: readonly unknown[] }
   | { ifNotExists: unknown }
   | { copyFrom: string }
-);
+>;
 
 export const updateOperationSch: z.ZodType<UpdateOperation, UpdateOperation> = z
   .union([

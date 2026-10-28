@@ -1,3 +1,5 @@
+import { dynamoAttrTypeSch } from './utility.types';
+import type { DynamoAttrType, ExclusiveUnion, UnionKeys } from './utility.types';
 import { dynamoValueSch as valueSch } from './dynamo-value.types';
 import { z } from 'zod';
 
@@ -6,12 +8,15 @@ export const conditionPathSch = z
   .min(1)
   .refine((path) => {
     if (!/^[^.[\]]+(?:\[\d+\]|\.[^.[\]]+)*$/.test(path)) return false;
-    return (path.match(/\.|\[/g)?.length ?? 0) <= 32;
+    return (
+      (path.match(/\.|\[/g)?.length ?? 0) <= 32 &&
+      (path.match(/\[\d+\]/g) ?? []).every((index) => Number.isSafeInteger(Number(index.slice(1, -1))))
+    );
   }, 'Invalid document path or more than 32 dereferences.');
 
-const attributeTypeSch = z.enum(['S', 'SS', 'N', 'NS', 'B', 'BS', 'BOOL', 'NULL', 'L', 'M']);
-export type DynamoAttributeType = z.infer<typeof attributeTypeSch>;
-export type ConditionComparison =
+const attributeTypeSch = dynamoAttrTypeSch;
+export type DynamoAttributeType = DynamoAttrType;
+export type ConditionComparison = ExclusiveUnion<
   | { eq: unknown }
   | { ne: unknown }
   | { lt: unknown }
@@ -19,8 +24,9 @@ export type ConditionComparison =
   | { gt: unknown }
   | { gte: unknown }
   | { between: readonly [unknown, unknown] }
-  | { in: readonly unknown[] };
-export type ConditionOperation =
+  | { in: readonly unknown[] }
+>;
+export type ConditionOperation = ExclusiveUnion<
   | ConditionComparison
   | { beginsWith: string | Uint8Array }
   | { contains: unknown }
@@ -28,13 +34,16 @@ export type ConditionOperation =
   | { type: DynamoAttributeType }
   | { exists: true }
   | { notExists: true }
-  | { size: ConditionComparison };
+  | { size: ConditionComparison }
+>;
 /** A leaf names its attribute and one operator; logical groups nest conditions. */
+type LogicalLeafExclusions = { and?: never; or?: never; not?: never };
+type LogicalGroupExclusions = Partial<Record<'attr' | UnionKeys<ConditionOperation>, never>>;
 export type Condition =
-  | ({ attr: string } & ConditionOperation)
-  | { and: readonly Condition[] }
-  | { or: readonly Condition[] }
-  | { not: Condition };
+  | ({ attr: string } & ConditionOperation & LogicalLeafExclusions)
+  | ({ and: readonly Condition[]; or?: never; not?: never } & LogicalGroupExclusions)
+  | ({ or: readonly Condition[]; and?: never; not?: never } & LogicalGroupExclusions)
+  | ({ not: Condition; and?: never; or?: never } & LogicalGroupExclusions);
 
 const comparisons = [
   z.object({ eq: valueSch }).strict(),
@@ -65,18 +74,26 @@ const conditionNodeSch: z.ZodType<Condition, Condition> = z.lazy(() =>
     z.object({ not: conditionNodeSch }).strict(),
   ])
 );
-const recordValueSch = z.union([
-  ...operationSchemas,
-  valueSch.refine(
-    (value) =>
-      value === null ||
+type DirectConditionValue =
+  | string
+  | number
+  | bigint
+  | boolean
+  | null
+  | Uint8Array
+  | readonly unknown[]
+  | ReadonlySet<unknown>;
+const directConditionValueSch = z.custom<DirectConditionValue>(
+  (value) =>
+    (value === null ||
       typeof value !== 'object' ||
       Array.isArray(value) ||
       value instanceof Set ||
-      value instanceof Uint8Array,
-    'Map equality requires { eq: value }.'
-  ),
-]);
+      value instanceof Uint8Array) &&
+    valueSch.safeParse(value).success,
+  'A direct condition requires a valid scalar, list, or set; map equality requires { eq: value }.'
+);
+const recordValueSch = z.union([...operationSchemas, directConditionValueSch]);
 export type ConditionRecordValue =
   | string
   | number
@@ -88,12 +105,9 @@ export type ConditionRecordValue =
   | ReadonlySet<unknown>
   | ConditionOperation;
 export type ConditionRecord = Record<string, ConditionRecordValue>;
-export const conditionRecordSch = z
+export const conditionRecordSch: z.ZodType<ConditionRecord, ConditionRecord> = z
   .record(conditionPathSch, recordValueSch)
-  .refine((record) => Object.keys(record).length > 0, 'conditions must not be empty.') as unknown as z.ZodType<
-  ConditionRecord,
-  ConditionRecord
->;
+  .refine((record) => Object.keys(record).length > 0, 'conditions must not be empty.');
 
 // Check cycles before the recursive schema traverses condition nodes or map values.
 export const conditionSch = z

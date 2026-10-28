@@ -1,33 +1,26 @@
+import { dynamoDocumentSch, dynamoValueSch } from './dynamo-value.types';
+import { dynamoKeyValueSch, dynamoPrimaryKeySch, dynamoPaginationKeySch } from './key.types';
 import { updateOperationsSch, validateUpdateMode } from './update.types';
 import type { Condition, ConditionRecord } from './condition.types';
 import { conditionSch, conditionRecordSch } from './condition.types';
 import { z } from 'zod';
 import {
-  genericRecordSch,
   optStringSch,
+  requiredStringSch,
   returnConsumedCapacityOptionsSch,
   returnItemCollectionMetricsOptionsSch,
   returnValuesOptionsSch,
   stringRecordSch,
 } from './utility.types';
 
-const trimmedRequiredStringSch = z.string().trim().min(1);
+const trimmedRequiredStringSch = requiredStringSch;
 const returnValuesOnConditionCheckFailureSch = z.enum(['NONE', 'ALL_OLD']).default('NONE');
 const expressionNameTokenSch = z.string().regex(/^#[A-Za-z0-9_]+$/);
 const expressionValueTokenSch = z.string().regex(/^:[A-Za-z0-9_]+$/);
 const expressionNamesSch = z.record(expressionNameTokenSch, z.string().min(1));
-const expressionValuesSch = z.record(expressionValueTokenSch, z.unknown());
+const expressionValuesSch = z.record(expressionValueTokenSch, dynamoValueSch);
 
-const oneOrTwoAttributeRecordSch = genericRecordSch.refine(
-  (record) => {
-    const attributeCount = Object.keys(record).length;
-
-    return attributeCount === 1 || attributeCount === 2;
-  },
-  {
-    message: 'Key must contain exactly 1 or 2 attributes.',
-  }
-);
+const oneOrTwoAttributeRecordSch = dynamoPrimaryKeySch;
 
 const structuredConditionFields = {
   condition: conditionSch.optional(),
@@ -103,30 +96,15 @@ function validateUniqueTableNames(tables: readonly { tableName: string }[], ctx:
 
 // --------------------------------------- Batch get command schemas ---------------------------------------------------
 
-export const keyValueSch = z.union([
-  z.string().min(1),
-  z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
-]);
+export const keyValueSch = dynamoKeyValueSch;
 export type KeyValue = z.infer<typeof keyValueSch>;
-
-export const deleteKeySch = z.record(z.string().min(1), keyValueSch).refine(
-  (key) => {
-    const keyCount = Object.keys(key).length;
-    return keyCount >= 1 && keyCount <= 2;
-  },
-  {
-    message: 'Key must contain a partition key and optional sort key.',
-  }
-);
+export const deleteKeySch = dynamoPrimaryKeySch;
 export type DeleteKey = z.infer<typeof deleteKeySch>;
 
 export const batchGetTableSch = z
   .object({
     tableName: z.string().min(1).max(1024),
-    keys: z
-      .array(z.record(z.string().min(1), keyValueSch))
-      .min(1)
-      .max(100),
+    keys: z.array(dynamoPrimaryKeySch).min(1).max(100),
     attributes: z.array(z.string().min(1)).min(1).optional(),
     consistentRead: z.boolean().default(false),
   })
@@ -170,14 +148,14 @@ const batchWriteKeySchemaSch = z
 const batchPutOperationSch = z
   .object({
     operation: z.literal('PUT'),
-    item: genericRecordSch,
+    item: dynamoDocumentSch,
   })
   .strict();
 
 const batchDeleteOperationSch = z
   .object({
     operation: z.literal('DELETE'),
-    key: genericRecordSch,
+    key: dynamoPrimaryKeySch,
   })
   .strict();
 
@@ -215,12 +193,7 @@ export const customBatchWriteCmdInputSch = z
 export type CustomBatchWriteCmdInput = z.input<typeof customBatchWriteCmdInputSch>;
 
 // --------------------------------------- Delete command schemas ------------------------------------------------------
-const definedExpressionValuesSch = z.record(
-  z.string(),
-  z.unknown().refine((value) => value !== undefined, {
-    message: 'Expression attribute values must not be undefined.',
-  })
-);
+const definedExpressionValuesSch = dynamoDocumentSch;
 
 export const customDeleteCmdInputSch = z
   .object({
@@ -321,18 +294,7 @@ const projectionAttributeSch = z
   .min(1)
   .regex(/^[^.[\]]+(?:\.[^.[\]]+|\[\d+\])*$/, 'Invalid projection attribute path.');
 
-const getKeyValueSch = z.union([
-  z.string().min(1),
-  z.number().finite(),
-  z.bigint(),
-  z.instanceof(Uint8Array).refine((value) => value.length > 0, 'Binary key values must not be empty.'),
-]);
-
-const getKeySch = z
-  .record(z.string().min(1), getKeyValueSch)
-  .refine((key) => Object.keys(key).length >= 1 && Object.keys(key).length <= 2, {
-    message: 'Key must contain a partition key and optional sort key.',
-  });
+const getKeySch = dynamoPrimaryKeySch;
 
 export const customGetCmdInputSch = z
   .object({
@@ -359,11 +321,11 @@ export type CustomGetCmdInput = z.input<typeof customGetCmdInputSch>;
 export const customPutCmdInputSch = z
   .object({
     tableName: trimmedRequiredStringSch,
-    item: genericRecordSch,
+    item: dynamoDocumentSch,
     ...structuredConditionFields,
     conditionExpression: optStringSch,
     expressionAttributeNames: stringRecordSch.optional(),
-    expressionAttributeValues: genericRecordSch.optional(),
+    expressionAttributeValues: dynamoDocumentSch.optional(),
     returnValues: z.enum(['NONE', 'ALL_OLD']).default('NONE'),
     returnConsumedCapacity: returnConsumedCapacityOptionsSch.default('NONE'),
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
@@ -378,15 +340,10 @@ export const customPutCmdInputSch = z
 export type CustomPutCmdInput = z.input<typeof customPutCmdInputSch>;
 
 // --------------------------------------- Query command schemas -------------------------------------------------------
-const queryKeyValueSch = z.union([
-  z.string().min(1),
-  z.number().finite(),
-  z.bigint(),
-  z.instanceof(Uint8Array).refine((value) => value.length > 0, 'Binary key values must not be empty.'),
-]);
+const queryKeyValueSch = dynamoKeyValueSch;
 
 const queryPartitionKeysSch = z
-  .record(trimmedRequiredStringSch, queryKeyValueSch)
+  .record(z.string().min(1), queryKeyValueSch)
   .superRefine((keys, ctx) => validateQueryKeyRecord(keys, 1, 4, ctx));
 
 const querySortConditionSch = z.union([
@@ -409,7 +366,7 @@ const querySortConditionSch = z.union([
     }),
 ]);
 
-const querySortKeysSch = z.record(trimmedRequiredStringSch, querySortConditionSch).superRefine((keys, ctx) => {
+const querySortKeysSch = z.record(z.string().min(1), querySortConditionSch).superRefine((keys, ctx) => {
   validateQueryKeyRecord(keys, 0, 4, ctx);
 
   const entries = Object.entries(keys);
@@ -431,20 +388,24 @@ const querySortKeysSch = z.record(trimmedRequiredStringSch, querySortConditionSc
   }
 });
 
-const queryFilterValueSch = z.unknown().refine((value) => value !== undefined, {
-  message: 'Filter values must not be undefined.',
-});
-
-const queryDirectFilterValueSch = z.union([
-  z.string(),
-  z.number().finite(),
-  z.bigint(),
-  z.boolean(),
-  z.null(),
-  z.instanceof(Uint8Array),
-  z.array(z.unknown()),
-  z.set(z.unknown()).min(1),
-]);
+const queryFilterValueSch = dynamoValueSch;
+const queryDirectFilterValueSch = z
+  .union([
+    z.string(),
+    z.number().finite(),
+    z.bigint(),
+    z.boolean(),
+    z.null(),
+    z.instanceof(Uint8Array),
+    z.array(dynamoValueSch),
+    z.set(dynamoValueSch).min(1),
+  ])
+  .superRefine((value, ctx) => {
+    const result = dynamoValueSch.safeParse(value);
+    if (!result.success)
+      for (const issue of result.error.issues)
+        ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
+  });
 
 const queryFilterConditionSch = z.union([
   queryDirectFilterValueSch,
@@ -468,17 +429,14 @@ export const customQueryCmdInputSch = z
     indexName: trimmedRequiredStringSch.optional(),
     partitionKeys: queryPartitionKeysSch,
     sortKeys: querySortKeysSch.default({}),
-    filters: z.record(trimmedRequiredStringSch, queryFilterConditionSch).optional(),
+    filters: z.record(z.string().min(1), queryFilterConditionSch).optional(),
     filterJoin: z.enum(['AND', 'OR']).default('AND'),
     attributes: z.array(projectionAttributeSch).min(1).optional(),
     filterExpression: optStringSch,
     projectionExpression: optStringSch,
     expressionAttributeNames: expressionNamesSch.optional(),
     expressionAttributeValues: expressionValuesSch.optional(),
-    exclusiveStartKey: z
-      .record(z.string().min(1), z.unknown())
-      .refine((key) => Object.keys(key).length > 0, 'ExclusiveStartKey must not be empty.')
-      .optional(),
+    exclusiveStartKey: dynamoPaginationKeySch.optional(),
     limit: z.number().int().positive().optional(),
     consistentRead: z.boolean().default(false),
     scanIndexForward: z.boolean().default(true),
@@ -572,12 +530,7 @@ export const customScanCmdInputSch = z
     projectionExpression: trimmedRequiredStringSch.optional(),
     expressionAttributeNames: expressionNamesSch.optional(),
     expressionAttributeValues: expressionValuesSch.optional(),
-    exclusiveStartKey: z
-      .record(z.string().min(1), z.unknown())
-      .refine((key) => Object.keys(key).length > 0, {
-        message: 'ExclusiveStartKey must not be empty.',
-      })
-      .optional(),
+    exclusiveStartKey: dynamoPaginationKeySch.optional(),
     limit: z.number().int().positive().optional(),
     consistentRead: z.boolean().default(false),
     select: z.enum(['ALL_ATTRIBUTES', 'ALL_PROJECTED_ATTRIBUTES', 'SPECIFIC_ATTRIBUTES', 'COUNT']).optional(),
@@ -675,11 +628,11 @@ const transactWritePutItemSch = z
   .object({
     operation: z.literal('PUT'),
     tableName: trimmedRequiredStringSch,
-    item: genericRecordSch,
+    item: dynamoDocumentSch,
     ...structuredConditionFields,
     conditionExpression: optStringSch,
     expressionAttributeNames: stringRecordSch.optional(),
-    expressionAttributeValues: genericRecordSch.optional(),
+    expressionAttributeValues: dynamoDocumentSch.optional(),
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict()
@@ -698,7 +651,7 @@ const transactWriteUpdateItemSch = z
     ...structuredConditionFields,
     conditionExpression: optStringSch,
     expressionAttributeNames: stringRecordSch.optional(),
-    expressionAttributeValues: genericRecordSch.optional(),
+    expressionAttributeValues: dynamoDocumentSch.optional(),
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict()
@@ -715,7 +668,7 @@ const transactWriteDeleteItemSch = z
     ...structuredConditionFields,
     conditionExpression: optStringSch,
     expressionAttributeNames: stringRecordSch.optional(),
-    expressionAttributeValues: genericRecordSch.optional(),
+    expressionAttributeValues: dynamoDocumentSch.optional(),
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict()
@@ -732,7 +685,7 @@ const transactWriteConditionCheckItemSch = z
     ...structuredConditionFields,
     conditionExpression: z.string().trim().min(1).optional(),
     expressionAttributeNames: stringRecordSch.optional(),
-    expressionAttributeValues: genericRecordSch.optional(),
+    expressionAttributeValues: dynamoDocumentSch.optional(),
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict()
@@ -766,129 +719,8 @@ export const customTransactWriteCmdInputSch = z
 export type CustomTransactWriteCmdInput = z.input<typeof customTransactWriteCmdInputSch>;
 // --------------------------------------- Update command schemas ------------------------------------------------------
 
-const updateRecordSch = z.record(z.string().min(1), z.unknown()).superRefine((record, ctx) => {
-  const validate = (value: unknown, path: PropertyKey[], ancestors: Set<object>): void => {
-    if (value === undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path,
-        message: 'Undefined cannot be stored as a DynamoDB value.',
-      });
-      return;
-    }
-
-    if (typeof value === 'number' && !Number.isFinite(value)) {
-      ctx.addIssue({
-        code: 'custom',
-        path,
-        message: 'DynamoDB numbers must be finite.',
-      });
-      return;
-    }
-
-    if (
-      value === null ||
-      typeof value === 'string' ||
-      typeof value === 'number' ||
-      typeof value === 'boolean' ||
-      typeof value === 'bigint' ||
-      value instanceof Uint8Array
-    ) {
-      return;
-    }
-
-    if (typeof value !== 'object') {
-      ctx.addIssue({
-        code: 'custom',
-        path,
-        message: 'Unsupported DynamoDB value type.',
-      });
-      return;
-    }
-
-    if (ancestors.has(value)) {
-      ctx.addIssue({
-        code: 'custom',
-        path,
-        message: 'Circular references are not supported.',
-      });
-      return;
-    }
-
-    if (
-      !Array.isArray(value) &&
-      !(value instanceof Set) &&
-      Object.getPrototypeOf(value) !== Object.prototype &&
-      Object.getPrototypeOf(value) !== null
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        path,
-        message: 'Only plain objects, arrays, and sets are supported.',
-      });
-      return;
-    }
-
-    ancestors.add(value);
-
-    if (value instanceof Set) {
-      if (value.size === 0) {
-        ctx.addIssue({
-          code: 'custom',
-          path,
-          message: 'DynamoDB sets must not be empty.',
-        });
-      }
-
-      for (const entry of value) {
-        validate(entry, path, ancestors);
-      }
-
-      const entries = [...value];
-
-      const category = (entry: unknown): string => {
-        if (typeof entry === 'string') return 'string';
-        if (typeof entry === 'number' || typeof entry === 'bigint') {
-          return 'number';
-        }
-        if (entry instanceof Uint8Array) return 'binary';
-        return 'unsupported';
-      };
-
-      const categories = new Set(entries.map(category));
-
-      if (categories.size !== 1 || categories.has('unsupported')) {
-        ctx.addIssue({
-          code: 'custom',
-          path,
-          message: 'Sets must contain one supported DynamoDB scalar type.',
-        });
-      }
-    } else {
-      for (const [key, child] of Object.entries(value)) {
-        validate(child, [...path, key], ancestors);
-      }
-    }
-
-    ancestors.delete(value);
-  };
-
-  for (const [key, value] of Object.entries(record)) {
-    validate(value, [key], new Set());
-  }
-});
-
-const updateKeySch = z
-  .record(z.string().min(1), z.union([z.string().min(1), z.number().finite(), z.instanceof(Uint8Array)]))
-  .refine(
-    (key) => {
-      const count = Object.keys(key).length;
-      return count === 1 || count === 2;
-    },
-    {
-      message: 'Key must contain exactly 1 or 2 attributes.',
-    }
-  );
+const updateRecordSch = dynamoDocumentSch;
+const updateKeySch = dynamoPrimaryKeySch;
 
 export const customUpdateCmdInputSch = z
   .object({
@@ -930,25 +762,6 @@ export const customUpdateCmdInputSch = z
             path: ['item', attribute],
             message: 'Primary-key attributes cannot be updated.',
           });
-        }
-      }
-    }
-
-    for (const [field, values] of [
-      ['expressionAttributeValues', input.expressionAttributeValues],
-      ['extraExpAttributeValues', input.extraExpAttributeValues],
-    ] as const) {
-      if (values) {
-        const result = updateRecordSch.safeParse(values);
-
-        if (!result.success) {
-          for (const issue of result.error.issues) {
-            ctx.addIssue({
-              code: 'custom',
-              path: [field, ...issue.path],
-              message: issue.message,
-            });
-          }
         }
       }
     }

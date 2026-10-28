@@ -1,6 +1,6 @@
+import { dynamoKeyIdentity, dynamoKeyValueSch, dynamoPrimaryKeySch } from '../types/key.types';
 import type { BatchWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import { customBatchWriteCmdInputSch } from '../types';
-import { marshall } from '../utils';
 
 type KeySchema = {
   partitionKey: string;
@@ -12,12 +12,12 @@ type KeySchema = {
  * ### Process flow:
  * 1. Determine the key names based on the key schema.
  * 2. If extra attributes are not allowed, check that the record contains exactly the key attributes.
- * 3. Validate that each key attribute is present and has a valid type (string or finite number).
+ * 3. Validate that each key attribute is present and has a valid native scalar type.
  * 4. Construct and return the primary key object.
  *
  * ### Notes:
  * - The function will throw an error if the record does not conform to the key schema.
- * - Only string and finite number types are considered valid for primary key attributes.
+ * - String, finite numeric, bigint, and nonempty binary key values are supported.
  *
  *
  * @param record The record from which to extract the primary key.
@@ -58,8 +58,10 @@ function getItemKey(
         throw new Error(`Missing or invalid primary-key attribute "${keyName}".`);
       }
 
-      if (typeof value !== 'string' && !(typeof value === 'number' && Number.isFinite(value))) {
-        throw new Error(`Primary-key attribute "${keyName}" must be a string or finite number.`);
+      if (!dynamoKeyValueSch.safeParse(value).success) {
+        throw new Error(
+          `Primary-key attribute "${keyName}" must be a valid string, number, bigint, or nonempty binary value.`
+        );
       }
 
       return [keyName, value];
@@ -79,11 +81,7 @@ function getItemKey(
  * @returns A stable string signature representing the key.
  */
 function createKeySignature(key: Record<string, unknown>): string {
-  return JSON.stringify(
-    Object.entries(key)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([name, value]) => [name, typeof value, value])
-  );
+  return dynamoKeyIdentity(dynamoPrimaryKeySch.parse(key));
 }
 
 /**
@@ -150,11 +148,6 @@ export function buildValidatedBatchWriteCommandInput(input: unknown): BatchWrite
         targetedKeys.add(keySignature);
 
         if (write.operation === 'PUT') {
-          // BatchWriteCommand accepts native values, but marshalling here ensures
-          // unsupported values fail during command construction instead of later
-          // when the AWS SDK sends the request.
-          marshall(write.item);
-
           return {
             PutRequest: {
               Item: write.item,

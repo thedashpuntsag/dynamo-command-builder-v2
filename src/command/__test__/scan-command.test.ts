@@ -306,7 +306,7 @@ describe('buildValidatedScanCommand', () => {
         filterExpression: '#status = :status',
         expressionAttributeValues: { ':status': undefined },
       })
-    ).toThrow('Missing expression attribute value: ":status".');
+    ).toThrow(/without undefined/);
   });
 
   it.each([

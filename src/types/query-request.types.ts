@@ -1,3 +1,5 @@
+import { parseTypedJson } from './read-command.types';
+import { dynamoPaginationKeySch } from './key.types';
 import { z } from 'zod';
 import {
   dynamoAttrTypeSch,
@@ -5,6 +7,7 @@ import {
   dynamoKeyAttrTypeSch,
   dynamoSortOperatorSch,
   optStringSch,
+  returnConsumedCapacityOptionsSch,
   type GenericRecord,
 } from './utility.types';
 
@@ -60,32 +63,26 @@ function normalizeNullFilterValues(value: unknown): unknown {
   return normalized;
 }
 
-const lastEvaluatedKeySch = z.preprocess(
-  (value) => {
-    if (value === '' || value === null || value === undefined) {
-      return undefined;
-    }
+const lastEvaluatedKeySch = z.preprocess((value) => {
+  if (value === '' || value === null || value === undefined) {
+    return undefined;
+  }
 
-    if (typeof value === 'object') {
-      return value;
-    }
+  if (typeof value === 'object') {
+    return value;
+  }
 
-    if (typeof value !== 'string') {
-      return value;
-    }
+  if (typeof value !== 'string') {
+    return value;
+  }
 
-    try {
-      return JSON.parse(value);
-    } catch {
-      // Let the Zod record schema produce the validation error.
-      return value;
-    }
-  },
-  z
-    .record(z.string(), z.union([z.string(), z.number(), z.instanceof(Uint8Array)]).optional())
-    .refine((key) => Object.keys(key).length > 0, 'lastEvaluatedKey must contain at least one key.')
-    .optional()
-);
+  try {
+    return parseTypedJson(value);
+  } catch {
+    // Let the Zod record schema produce the validation error.
+    return value;
+  }
+}, dynamoPaginationKeySch.optional());
 
 const readOperationSch = z.preprocess(
   (value) => (typeof value === 'string' ? value.trim().toUpperCase() : value),
@@ -203,7 +200,7 @@ export const dynamoReadQueryRequestSch = z
         projectionExpression: optStringSch,
         expressionAttributeNames: z.record(z.string().min(1), z.string().min(1)).optional(),
         select: z.enum(['ALL_ATTRIBUTES', 'ALL_PROJECTED_ATTRIBUTES', 'SPECIFIC_ATTRIBUTES', 'COUNT']).optional(),
-        returnConsumedCapacity: z.enum(['INDEXES', 'TOTAL', 'NONE']).optional(),
+        returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
       })
       .strict()
   )

@@ -1,3 +1,7 @@
+import { NumberValue } from '@aws-sdk/lib-dynamodb';
+import { parseDynamoNumber } from '../utils/dynamo-number';
+import { dynamoValueSch } from './dynamo-value.types';
+import { dynamoPrimaryKeySch, dynamoKeyIdentity } from './key.types';
 import { z } from 'zod';
 
 import type { DynamoReadQueryRequest } from './query-request.types';
@@ -8,9 +12,7 @@ import {
   returnConsumedCapacityOptionsSch,
 } from './utility.types';
 
-const keySch = z.record(z.string().min(1), z.unknown()).refine((key) => Object.keys(key).length > 0, {
-  message: 'key must contain at least one attribute.',
-});
+const keySch = dynamoPrimaryKeySch;
 
 const projectionFields = {
   projectionExpression: z.string().trim().min(1).optional(),
@@ -20,6 +22,7 @@ const projectionFields = {
 
 /**
  * Schema for a single DynamoDB GetItem request.
+ * @deprecated Prefer customGetCmdInputSch for command inputs.
  *
  * Validates the target table, primary-key payload, optional read consistency,
  * and projection metadata for a standard GET operation.
@@ -33,6 +36,7 @@ export const dynamoGetRequestSch = z
     ...projectionFields,
   })
   .strict();
+/** @deprecated Prefer CustomGetCmdInput for command inputs. */
 export type DynamoGetRequest = z.infer<typeof dynamoGetRequestSch>;
 
 const batchTableSch = z
@@ -46,6 +50,7 @@ const batchTableSch = z
 
 /**
  * Schema for a DynamoDB BatchGetItem request.
+ * @deprecated Prefer customBatchGetCmdInputSch for command inputs.
  *
  * Ensures each table has at least one key, caps the total number of keys,
  * and rejects duplicate key combinations within the same batch.
@@ -60,14 +65,14 @@ export const dynamoBatchGetRequestSch = z
         (items) => Object.values(items).reduce((count, item) => count + item.keys.length, 0) <= 100,
         'BatchGet supports at most 100 keys.'
       ),
-    returnConsumedCapacity: z.enum(['INDEXES', 'TOTAL', 'NONE']).optional(),
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
   })
   .strict()
   .superRefine((request, ctx) => {
     const seen = new Set<string>();
     for (const [table, item] of Object.entries(request.requestItems)) {
       item.keys.forEach((key, index) => {
-        const identity = `${table}:${JSON.stringify(key, Object.keys(key).sort())}`;
+        const identity = JSON.stringify([table, dynamoKeyIdentity(key)]);
         if (seen.has(identity)) {
           ctx.addIssue({
             code: 'custom',
@@ -79,6 +84,7 @@ export const dynamoBatchGetRequestSch = z
       });
     }
   });
+/** @deprecated Prefer CustomBatchGetCmdInput for command inputs. */
 export type DynamoBatchGetRequest = z.infer<typeof dynamoBatchGetRequestSch>;
 
 const transactItemSch = z
@@ -92,6 +98,7 @@ const transactItemSch = z
 
 /**
  * Schema for a DynamoDB TransactGetItem request.
+ * @deprecated Prefer customTransactGetCmdInputSch for command inputs.
  *
  * Covers a transaction batch of up to 100 read operations while validating
  * the table, key, and optional projection metadata for each item.
@@ -100,9 +107,10 @@ export const dynamoTransactGetRequestSch = z
   .object({
     operation: z.literal('TRANSACT_GET'),
     transactItems: z.array(transactItemSch).min(1).max(100),
-    returnConsumedCapacity: z.enum(['INDEXES', 'TOTAL', 'NONE']).optional(),
+    returnConsumedCapacity: returnConsumedCapacityOptionsSch.optional(),
   })
   .strict();
+/** @deprecated Prefer CustomTransactGetCmdInput for command inputs. */
 export type DynamoTransactGetRequest = z.infer<typeof dynamoTransactGetRequestSch>;
 
 export type DynamoKeyDefinition = { name: string; valueType: z.infer<typeof dynamoKeyAttrTypeSch> };
@@ -233,37 +241,78 @@ function hasSlotGap(request: Record<string, unknown>, prefix: 'pkAttr' | 'skAttr
  * 2. Reject missing values for all non-NULL types.
  * 3. Decode scalar values for S, N, and BOOL using the DynamoDB rules for each type.
  * 4. Decode binary payloads through the base64 conversion helper.
- * 5. Parse JSON-based collections such as SS, NS, L, and M when the payload is structured.
+ * 5. Validate JSON collection shapes and return native Sets for SS, NS, and BS.
  * 6. Throw a clear error for unsupported or malformed value encodings.
  *
  * @param value The string representation of the value to decode.
  * @param valueType The DynamoDB type of the value.
- * @returns The decoded native JavaScript value.
+ * @returns The decoded value; large integers become bigint and set types become native Sets.
  */
 export function decodeDynamoValue(value: string | undefined, valueType: z.infer<typeof dynamoAttrTypeSch>): unknown {
   if (valueType === 'NULL') return null;
   if (value === undefined) throw new Error(`${valueType} requires a value.`);
   if (valueType === 'S') return value;
-  if (valueType === 'N') {
-    const number = Number(value);
-    if (!Number.isFinite(number) || !/^-?(0|[1-9]\d*)(\.\d+)?$/.test(value))
-      throw new Error('Invalid DynamoDB number.');
-    return number;
-  }
+  if (valueType === 'N') return parseDynamoNumber(value);
   if (valueType === 'BOOL') {
     if (value !== 'true' && value !== 'false') throw new Error('BOOL must be true or false.');
     return value === 'true';
   }
-  const rawValue = value;
-  if (valueType === 'B' || valueType === 'BS') return decodeBase64(rawValue);
-  if (['SS', 'NS', 'L', 'M'].includes(valueType)) {
-    try {
-      return JSON.parse(rawValue);
-    } catch {
-      throw new Error(`${valueType} requires valid JSON.`);
+  if (valueType === 'B') return decodeBase64(value);
+  const parsed: unknown = parseTypedJson(value);
+  if (valueType === 'L' || valueType === 'M') {
+    if (
+      valueType === 'L'
+        ? !Array.isArray(parsed)
+        : parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)
+    ) {
+      throw new Error(`${valueType} requires a JSON ${valueType === 'L' ? 'list' : 'map'}.`);
+    }
+    return dynamoValueSch.parse(parsed);
+  }
+  if (valueType === 'SS' || valueType === 'NS' || valueType === 'BS') {
+    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error(`${valueType} requires a nonempty JSON array.`);
+    if (valueType === 'NS') {
+      const numbers = parsed.map((item: unknown) => {
+        if (typeof item !== 'string' && typeof item !== 'number') throw new Error('NS requires number elements.');
+        return parseDynamoNumber(String(item));
+      });
+      // The SDK chooses a set serializer from its first member. Normalize mixed
+      // bigint/number sets to explicit numeric values so ordering cannot cause rejection.
+      const members =
+        numbers.some((item) => typeof item === 'bigint') && numbers.some((item) => typeof item === 'number')
+          ? numbers.map((item) => NumberValue.from(String(item)))
+          : numbers;
+      return dynamoValueSch.parse(new Set<number | bigint | NumberValue>(members));
+    }
+    if (!parsed.every((item: unknown) => typeof item === 'string'))
+      throw new Error(`${valueType} requires string elements.`);
+    const strings = [...new Set(parsed as string[])];
+    return dynamoValueSch.parse(valueType === 'BS' ? new Set(strings.map(decodeBase64)) : new Set(strings));
+  }
+  throw new Error(`Unsupported DynamoDB value type: ${String(valueType)}`);
+}
+
+/**
+ * Parses JSON while rejecting number literals that JSON.parse would round or cannot represent safely.
+ *
+ * ### Process Flow:
+ * 1. Scan quoted strings and numeric tokens, ignoring numbers inside strings.
+ * 2. Validate each number and reject integral literals that require bigint.
+ * 3. Parse the original JSON without rewriting its properties or values.
+ *
+ * @param value - JSON text for a typed collection or pagination key.
+ * @returns The parsed value without silently rounded numeric literals.
+ * @throws If the JSON or any numeric literal is invalid or loses precision.
+ */
+export function parseTypedJson(value: string): unknown {
+  for (const [token] of value.matchAll(/"(?:\\.|[^"\\])*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/g)) {
+    if (!token.startsWith('"') && typeof parseDynamoNumber(token) === 'bigint') {
+      throw new Error(
+        'JSON numbers outside the safe integer range must be encoded as strings in NS or supplied as native bigint values.'
+      );
     }
   }
-  throw new Error(`Unsupported DynamoDB value type: ${valueType}`);
+  return JSON.parse(value);
 }
 
 /**

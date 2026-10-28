@@ -56,7 +56,9 @@ export const dynamoFilterOperatorSch = z.enum([
 export type DynamoFilterOperator = z.infer<typeof dynamoFilterOperatorSch>;
 
 export const dynamoOperationSch = z.enum(['QUERY', 'SCAN']);
-export type DynamoOperationSch = z.infer<typeof dynamoOperationSch>;
+export type DynamoOperation = z.infer<typeof dynamoOperationSch>;
+/** @deprecated Use DynamoOperation; retained for source compatibility. */
+export type DynamoOperationSch = DynamoOperation;
 
 export const returnValuesOptionsSch = z.enum(['ALL_NEW', 'ALL_OLD', 'UPDATED_NEW', 'UPDATED_OLD', 'NONE']);
 export type ReturnValuesOptions = z.infer<typeof returnValuesOptionsSch>;
@@ -66,3 +68,10 @@ export type ReturnConsumedCapacityOptions = z.infer<typeof returnConsumedCapacit
 
 export const returnItemCollectionMetricsOptionsSch = z.enum(['SIZE', 'NONE']);
 export type ReturnItemCollectionMetricsOptions = z.infer<typeof returnItemCollectionMetricsOptionsSch>;
+
+/** All property keys present in any member of a union. */
+export type UnionKeys<T> = T extends unknown ? keyof T : never;
+/** Object union that forbids the operation keys belonging to sibling variants. */
+export type ExclusiveUnion<T, All = T> = T extends unknown
+  ? T & Partial<Record<Exclude<UnionKeys<All>, keyof T>, never>>
+  : never;

@@ -389,6 +389,6 @@ describe('buildValidatedTransactWriteCommand', () => {
       build({
         transactItems: [{ operation: 'DELETE', tableName: 'users', key }],
       })
-    ).toThrow('Key must contain exactly 1 or 2 attributes.');
+    ).toThrow('Key must contain a partition key and optional sort key.');
   });
 });

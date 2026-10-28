@@ -224,10 +224,10 @@ export function compileConditionExpression(input: Condition, scope: ConditionTok
    */
   function compile(node: Condition): string {
     count();
-    if ('and' in node || 'or' in node) {
-      const children = 'and' in node ? node.and : node.or;
+    if (node.and !== undefined || node.or !== undefined) {
+      const children = node.and ?? node.or!;
       count(children.length - 2);
-      return children.map((child) => `(${compile(child)})`).join('and' in node ? ' AND ' : ' OR ');
+      return children.map((child) => `(${compile(child)})`).join(node.and !== undefined ? ' AND ' : ' OR ');
     }
     if ('not' in node) return `NOT (${compile(node.not)})`;
     const subject = path(node.attr);

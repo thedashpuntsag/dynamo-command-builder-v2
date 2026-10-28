@@ -1,3 +1,4 @@
+import { dynamoKeyIdentity } from '../types/key.types';
 import { CustomBatchGetCmdInput, customBatchGetCmdInputSch } from '@/types';
 import { BatchGetCommandInput } from '@aws-sdk/lib-dynamodb';
 
@@ -78,14 +79,17 @@ export function buildValidatedBatchGetCommand(input: CustomBatchGetCmdInput): Ba
         }
 
         for (const keyName of keyNames) {
-          if (typeof key[keyName] !== typeof firstKey[keyName]) {
+          if (
+            (typeof key[keyName] === 'bigint' ? 'number' : typeof key[keyName]) !==
+            (typeof firstKey[keyName] === 'bigint' ? 'number' : typeof firstKey[keyName])
+          ) {
             throw new Error(
               `Key attribute "${keyName}" has inconsistent value types ` + `in table "${table.tableName}".`
             );
           }
         }
 
-        const signature = JSON.stringify(keyNames.map((keyName) => [keyName, typeof key[keyName], key[keyName]]));
+        const signature = dynamoKeyIdentity(key);
 
         if (seenKeys.has(signature)) {
           throw new Error(`Duplicate key found for table "${table.tableName}".`);

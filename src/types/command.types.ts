@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  dynamoAttrTypeSch,
   dynamoFilterOperatorSch,
   dynamoKeyAttrTypeSch,
   dynamoSortOperatorSch,
@@ -57,7 +58,7 @@ export const dynamoFilterSch = z
     name: requiredStringSch,
     value: optStringSch,
     value2: optStringSch,
-    valueType: z.enum(['S', 'N', 'B', 'BOOL', 'NULL', 'SS', 'NS', 'BS', 'M', 'L']).default('S'),
+    valueType: dynamoAttrTypeSch.default('S'),
     condition: dynamoFilterOperatorSch.default('EQUAL_TO'),
   })
   .strict()
@@ -136,6 +137,7 @@ export type DynamoScanRequest = z.infer<typeof dynamoScanPropsSch>;
 /**
  * Validates the discriminated query or scan request and its cross-field rules.
  */
+/** @deprecated Prefer customQueryCmdInputSch/customScanCmdInputSch for command inputs. */
 export const dynamoReadPropsSch = z
   .discriminatedUnion('operation', [dynamoQueryPropsSch, dynamoScanPropsSch])
   .superRefine((request, ctx) => {
@@ -151,6 +153,7 @@ export const dynamoReadPropsSch = z
     validateQueryFilterKeyUsage(request, ctx);
   });
 
+/** @deprecated Prefer CustomQueryCmdInput or CustomScanCmdInput. */
 export type DynamoReadProps = z.infer<typeof dynamoReadPropsSch>;
 
 // ---------------------------------------- Utility functions ----------------------------------------------------------

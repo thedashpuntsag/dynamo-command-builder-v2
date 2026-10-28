@@ -245,7 +245,7 @@ describe('buildValidatedTransactGetCommand', () => {
       build({
         transactItems: [{ tableName: 'users', key }],
       })
-    ).toThrow('Key must contain exactly 1 or 2 attributes.');
+    ).toThrow('Key must contain a partition key and optional sort key.');
   });
 
   it('rejects a whitespace-only table name', () => {

@@ -219,7 +219,7 @@ describe('buildValidatedBatchGetCommand', () => {
     ['more than two', { tenant: 'tenant-1', category: 'user', id: 'user-1' }],
   ])('rejects keys containing %s key attributes', (_description, key) => {
     expect(() => build({ tables: [{ tableName: 'Users', keys: [key] }] })).toThrow(
-      'Keys for table "Users" must contain one or two attributes.'
+      'Key must contain a partition key and optional sort key.'
     );
   });
 

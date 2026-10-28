@@ -146,7 +146,6 @@ describe('buildValidatedDeleteCommandInput', () => {
     ['null', null],
     ['object', { id: 'user-1' }],
     ['array', ['user-1']],
-    ['fractional number', 1.5],
     ['non-finite number', Infinity],
     ['unsafe integer', Number.MAX_SAFE_INTEGER + 1],
   ])('rejects an invalid %s key value', (_description, value) => {
