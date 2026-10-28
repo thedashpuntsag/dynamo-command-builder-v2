@@ -2,7 +2,11 @@ import JSON5 from 'json5';
 
 /** JSON5 object literals with explicit, round-trippable tags for DynamoDB native types. */
 export function parseInput(source: string): unknown {
-  return JSON5.parse(source, (_key, value: unknown) => {
+  const trimmed = source.trim();
+  const declaration = /^const\s+input\s*=\s*([\s\S]*?)\s*;?$/.exec(trimmed);
+  const objectSource = declaration?.[1] ?? trimmed;
+
+  return JSON5.parse(objectSource, (_key, value: unknown) => {
     if (typeof value === 'number' && !Number.isFinite(value)) {
       throw new Error('DynamoDB numbers must be finite.');
     }

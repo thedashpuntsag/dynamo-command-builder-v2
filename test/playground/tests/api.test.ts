@@ -40,6 +40,12 @@ describe('playground API', () => {
     expect(result.body.builtInput).toMatchObject({ TableName: tableName, Key: { id: 'local-test-001' } });
     expect(send).not.toHaveBeenCalled();
   });
+  it('builds from the JavaScript declaration shown in the editor', async () => {
+    const source = `const input = ${stringify(examples[0]!.input)};`;
+    const result = await request({ command: 'get', source, action: 'build' });
+    expect(result.status).toBe(200);
+    expect(result.body.builtInput).toMatchObject({ TableName: tableName, Key: { id: 'local-test-001' } });
+  });
   it('executes the built SDK command and retains input on service failure', async () => {
     vi.spyOn(DynamoDBDocumentClient.prototype, 'send').mockRejectedValue(new Error('Database offline'));
     const result = await request({ command: 'get', source: stringify(examples[0]!.input), action: 'run' });

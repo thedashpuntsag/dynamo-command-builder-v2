@@ -17,9 +17,10 @@ import { buildValidatedQueryCommand } from '../../src/command/query-command';
 
 const endpoint = process.env.DYNAMODB_LOCAL_ENDPOINT ?? 'http://localhost:8000';
 const tableName = process.env.DYNAMODB_LOCAL_TABLE ?? 'command-builder-test';
+
 const seedItemCount = 50;
 const baseTimestamp = 1_798_000_000_000;
-const index: GlobalSecondaryIndex = {
+const statusIndex: GlobalSecondaryIndex = {
   IndexName: 'status-createdAt-index',
   KeySchema: [
     { AttributeName: 'status', KeyType: 'HASH' },
@@ -27,6 +28,18 @@ const index: GlobalSecondaryIndex = {
   ],
   Projection: { ProjectionType: 'ALL' },
 };
+const numberedIndexes: GlobalSecondaryIndex[] = Array.from({ length: 4 }, (_, offset) => {
+  const number = offset + 1;
+  return {
+    IndexName: `pk${number}-sk${number}-index`,
+    KeySchema: [
+      { AttributeName: `pk${number}`, KeyType: 'HASH' },
+      { AttributeName: `sk${number}`, KeyType: 'RANGE' },
+    ],
+    Projection: { ProjectionType: 'ALL' },
+  };
+});
+const indexes = [statusIndex, ...numberedIndexes];
 
 const client = new DynamoDBClient({
   endpoint,
@@ -72,9 +85,16 @@ async function createTable(): Promise<void> {
           { AttributeName: 'id', AttributeType: 'S' },
           { AttributeName: 'status', AttributeType: 'S' },
           { AttributeName: 'createdAt', AttributeType: 'N' },
+          ...numberedIndexes.flatMap((_, offset) => {
+            const number = offset + 1;
+            return [
+              { AttributeName: `pk${number}`, AttributeType: 'S' as const },
+              { AttributeName: `sk${number}`, AttributeType: 'S' as const },
+            ];
+          }),
         ],
         KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
-        GlobalSecondaryIndexes: [index],
+        GlobalSecondaryIndexes: indexes,
       })
     );
   } catch (error: unknown) {
@@ -86,7 +106,9 @@ async function createTable(): Promise<void> {
   await waitUntilTableExists({ client, maxWaitTime: 10, minDelay: 1, maxDelay: 2 }, { TableName: tableName });
 }
 
-async function ensureIndex(): Promise<void> {
+async function ensureIndex(index: GlobalSecondaryIndex): Promise<void> {
+  const keySchema = index.KeySchema;
+  assert.ok(keySchema?.length, `Index "${index.IndexName}" must define a key schema.`);
   const { Table } = await client.send(new DescribeTableCommand({ TableName: tableName }));
   const existingIndex = Table?.GlobalSecondaryIndexes?.find((entry) => entry.IndexName === index.IndexName);
 
@@ -94,10 +116,10 @@ async function ensureIndex(): Promise<void> {
     await client.send(
       new UpdateTableCommand({
         TableName: tableName,
-        AttributeDefinitions: [
-          { AttributeName: 'status', AttributeType: 'S' },
-          { AttributeName: 'createdAt', AttributeType: 'N' },
-        ],
+        AttributeDefinitions: keySchema.map(({ AttributeName }) => ({
+          AttributeName,
+          AttributeType: AttributeName === 'createdAt' ? 'N' : 'S',
+        })),
         GlobalSecondaryIndexUpdates: [{ Create: index }],
       })
     );
@@ -112,8 +134,14 @@ async function ensureIndex(): Promise<void> {
       const attributes = new Map(
         currentTable?.AttributeDefinitions?.map((entry) => [entry.AttributeName, entry.AttributeType])
       );
-      assert.equal(attributes.get('status'), 'S', 'Index status key must be a string.');
-      assert.equal(attributes.get('createdAt'), 'N', 'Index createdAt key must be a number.');
+      for (const key of keySchema) {
+        const expectedType = key.AttributeName === 'createdAt' ? 'N' : 'S';
+        assert.equal(
+          attributes.get(key.AttributeName),
+          expectedType,
+          `Index ${key.AttributeName} key has the wrong type.`
+        );
+      }
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -121,7 +149,7 @@ async function ensureIndex(): Promise<void> {
   throw new Error(`Index "${index.IndexName}" did not become ACTIVE.`);
 }
 
-async function verifyIndex(items: { id: string; status: string; createdAt: number }[]): Promise<void> {
+async function verifyStatusIndex(items: { id: string; status: string; createdAt: number }[]): Promise<void> {
   for (const status of ['READY', 'PENDING']) {
     const expectedIds = items.filter((item) => item.status === status).map((item) => item.id);
     let verified = false;
@@ -131,7 +159,7 @@ async function verifyIndex(items: { id: string; status: string; createdAt: numbe
         new QueryCommand(
           buildValidatedQueryCommand({
             tableName,
-            indexName: index.IndexName,
+            indexName: statusIndex.IndexName,
             partitionKeys: { status },
             sortKeys: { createdAt: { between: [baseTimestamp, baseTimestamp + (seedItemCount - 1) * 60_000] } },
             attributes: ['id', 'status', 'createdAt'],
@@ -159,7 +187,7 @@ async function verifyIndex(items: { id: string; status: string; createdAt: numbe
 async function main(): Promise<void> {
   await waitForDynamoDB();
   await createTable();
-  await ensureIndex();
+  for (const index of indexes) await ensureIndex(index);
 
   const items = Array.from({ length: seedItemCount }, (_, index) => {
     const createdAt = baseTimestamp + index * 60_000;
@@ -178,6 +206,14 @@ async function main(): Promise<void> {
         size: 0,
       },
       status: index % 2 === 0 ? 'READY' : 'PENDING',
+      pk1: `STATUS#${index % 2 === 0 ? 'READY' : 'PENDING'}`,
+      sk1: `CREATED#${String(createdAt)}`,
+      pk2: `OWNER#user-${(index % 5) + 1}`,
+      sk2: `ORDER#${String(index + 1).padStart(3, '0')}`,
+      pk3: `SOURCE#dynamo-command-builder-v2`,
+      sk3: `ITEM#${String(index + 1).padStart(3, '0')}`,
+      pk4: `WORKFLOW#${index % 2 === 0 ? 'ENABLED' : 'DISABLED'}`,
+      sk4: `UPDATED#${String(createdAt + 30_000)}`,
       message: index % 2 === 0 ? 'Item is ready' : 'Item is pending',
       owner: {
         id: `user-${(index % 5) + 1}`,
@@ -268,11 +304,14 @@ async function main(): Promise<void> {
     throw new Error(`Expected to seed and read back ${seedItemCount} valid items.`);
   }
 
-  await verifyIndex(items);
+  await verifyStatusIndex(items);
 
   console.log(`DynamoDB Local is ready at ${endpoint}.`);
   console.log(`Seeded and verified ${seedItemCount} items in table "${tableName}".`);
-  console.log(`Verified index "${index.IndexName}" with status partition key and numeric createdAt sort key.`);
+  console.log(`Verified index "${statusIndex.IndexName}" with status partition key and numeric createdAt sort key.`);
+  console.log(
+    `Ensured ${numberedIndexes.length} PK/SK indexes: ${numberedIndexes.map(({ IndexName }) => IndexName).join(', ')}.`
+  );
 }
 
 main()

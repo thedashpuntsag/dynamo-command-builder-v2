@@ -13,6 +13,14 @@ describe('playground native value codec', () => {
     expect(parseInput(stringify(input))).toEqual(input);
     expect(parseInput(stringify(Buffer.from('Hello')))).toEqual(new TextEncoder().encode('Hello'));
   });
+  it('accepts the playground const input declaration without evaluating JavaScript', () => {
+    expect(parseInput("const input = { tableName: 'Orders', enabled: true };\n")).toEqual({
+      tableName: 'Orders',
+      enabled: true,
+    });
+    expect(() => parseInput("let input = { tableName: 'Orders' }")).toThrow();
+    expect(() => parseInput("const other = { tableName: 'Orders' }")).toThrow();
+  });
   it.each([
     '{x: {$set: []}}',
     '{x: {$set: [1, "a"]}}',

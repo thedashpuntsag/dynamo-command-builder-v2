@@ -50,19 +50,23 @@ Read examples use seeded `local-test-*` IDs. Write examples use `playground-*` I
 
 See the [playground README](./test/playground/README.md) for its source layout and the [local testing guide](./docs/local-test.md) for detailed usage.
 
-## Seeded table and index
+## Seeded table and indexes
 
 The seed creates `command-builder-test` with a string `id` partition key and writes 50 deterministic items. Items contain nested maps and lists, string and number sets, binary payloads, Unicode, nulls, empty values, and attribute names that require expression aliases.
 
-It also creates this global secondary index:
+It also creates these global secondary indexes:
 
 | Index                    | Partition key     | Sort key             | Projection |
 | ------------------------ | ----------------- | -------------------- | ---------- |
 | `status-createdAt-index` | `status` (string) | `createdAt` (number) | `ALL`      |
+| `pk1-sk1-index`          | `pk1` (string)    | `sk1` (string)       | `ALL`      |
+| `pk2-sk2-index`          | `pk2` (string)    | `sk2` (string)       | `ALL`      |
+| `pk3-sk3-index`          | `pk3` (string)    | `sk3` (string)       | `ALL`      |
+| `pk4-sk4-index`          | `pk4` (string)    | `sk4` (string)       | `ALL`      |
 
-Re-running the seed adds a missing index to an existing table, replaces the 50 seeded items, and preserves other items. It waits for the index to become active, verifies full item read-backs, and queries both `READY` and `PENDING` groups in timestamp order.
+Re-running the seed adds any missing indexes to an existing table, replaces the 50 seeded items, and preserves other items. It waits for every index to become active, verifies full item read-backs, and queries both `READY` and `PENDING` groups in timestamp order.
 
-The playground's Query and Scan all-fields presets use this index. GSI requests use `consistentRead: false`. After updating an existing checkout, re-run the seed and restart the playground; load a preset to replace an older saved draft.
+The playground's runnable Query preset uses `pk4-sk4-index`; the Query and Scan all-fields presets use `status-createdAt-index`. GSI requests use `consistentRead: false`. After updating an existing checkout, re-run the seed and restart the playground; load a preset to replace an older saved draft.
 
 ## Command builders
 

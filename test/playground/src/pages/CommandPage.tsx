@@ -1,9 +1,42 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import JSON5 from 'json5';
 import { Editor } from '../components/Editor';
 import type { CommandExample, PlaygroundConfig, CommandOutcome } from '../shared/commands';
 
 const pretty = (value: unknown) => JSON.stringify(value, null, 2);
+const editable = (value: unknown) => {
+  const object = pretty(value).replace(/^(\s*)"([A-Za-z_$][\w$]*)":/gm, '$1$2:');
+  return `const input = ${object};`;
+};
+const unwrapEditable = (source: string) => {
+  const declaration = /^\s*const\s+input\s*=\s*([\s\S]*?)\s*;?\s*$/.exec(source);
+  return declaration?.[1] ?? source;
+};
+const parseEditable = (source: string) => {
+  return JSON5.parse(unwrapEditable(source));
+};
+const jsonToken = /"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g;
+
+function highlightedJson(source: string) {
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+
+  for (const match of source.matchAll(jsonToken)) {
+    const start = match.index;
+    const token = match[0];
+    if (start > cursor) parts.push(source.slice(cursor, start));
+    const isKey = token.startsWith('"') && /^\s*:/.test(source.slice(start + token.length));
+    parts.push(
+      <span className={isKey ? 'json-key' : 'json-value'} key={start}>
+        {token}
+      </span>
+    );
+    cursor = start + token.length;
+  }
+
+  if (cursor < source.length) parts.push(source.slice(cursor));
+  return parts;
+}
 
 export function CommandPage({ command, config }: { command: CommandExample; config: PlaygroundConfig }) {
   const storageKey = `dynamo-playground:${config.tableName}:${command.id}`;
@@ -14,10 +47,16 @@ export function CommandPage({ command, config }: { command: CommandExample; conf
       return 'seeded';
     }
   });
-  const initial = pretty(preset === 'all' ? command.allFieldsInput : command.input);
+  const initial = editable(preset === 'all' ? command.allFieldsInput : command.input);
   const [source, setSource] = useState(() => {
     try {
-      return localStorage.getItem(storageKey) ?? initial;
+      const saved = localStorage.getItem(storageKey);
+      if (!saved) return initial;
+      try {
+        return editable(parseEditable(saved));
+      } catch {
+        return saved;
+      }
     } catch {
       return initial;
     }
@@ -37,7 +76,7 @@ export function CommandPage({ command, config }: { command: CommandExample; conf
   }, [source, storageKey, preset]);
   function loadPreset(next: 'seeded' | 'all') {
     setPreset(next);
-    setSource(pretty(next === 'all' ? command.allFieldsInput : command.input));
+    setSource(editable(next === 'all' ? command.allFieldsInput : command.input));
     setNotice(next === 'all' ? 'All-fields example loaded.' : 'Seeded-table example loaded.');
   }
   const execute = useCallback(
@@ -51,7 +90,7 @@ export function CommandPage({ command, config }: { command: CommandExample; conf
         const response = await fetch('/api/playground/execute', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ command: command.id, source, action }),
+          body: JSON.stringify({ command: command.id, source: unwrapEditable(source), action }),
         });
         const data = (await response.json()) as CommandOutcome;
         if (!response.ok && !data.error) throw new Error(`Request failed (${response.status}).`);
@@ -74,7 +113,7 @@ export function CommandPage({ command, config }: { command: CommandExample; conf
   const outputText = output === undefined ? '' : pretty(output);
   function format() {
     try {
-      setSource(pretty(JSON5.parse(source)));
+      setSource(editable(parseEditable(source)));
       setNotice('Input formatted.');
     } catch (error: unknown) {
       setNotice(error instanceof Error ? error.message : String(error));
@@ -166,7 +205,7 @@ export function CommandPage({ command, config }: { command: CommandExample; conf
               </div>
             ) : outputText ? (
               <pre className={outcome?.error && tab === 'result' ? 'error-output' : ''}>
-                <code>{outputText}</code>
+                <code>{outcome?.error && tab === 'result' ? outputText : highlightedJson(outputText)}</code>
               </pre>
             ) : (
               <div className='empty-state'>
