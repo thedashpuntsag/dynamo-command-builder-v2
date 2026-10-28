@@ -526,6 +526,10 @@ export const customScanCmdInputSch = z
   .object({
     tableName: trimmedRequiredStringSch,
     indexName: trimmedRequiredStringSch.optional(),
+    filter: conditionSch.optional(),
+    filters: conditionRecordSch.optional(),
+    filterJoin: z.enum(['AND', 'OR']).optional(),
+    attributes: z.array(projectionAttributeSch).min(1).optional(),
     filterExpression: trimmedRequiredStringSch.optional(),
     projectionExpression: trimmedRequiredStringSch.optional(),
     expressionAttributeNames: expressionNamesSch.optional(),
@@ -540,6 +544,13 @@ export const customScanCmdInputSch = z
   })
   .strict()
   .superRefine((input, ctx) => {
+    if ([input.filter, input.filters, input.filterExpression].filter((value) => value !== undefined).length > 1) {
+      ctx.addIssue({ code: 'custom', message: 'Use only one of filter, filters, or filterExpression.' });
+    }
+    if (input.filterJoin !== undefined && input.filters === undefined) {
+      ctx.addIssue({ code: 'custom', path: ['filterJoin'], message: 'filterJoin requires filters.' });
+    }
+
     // Both properties are required for parallel scans.
     const hasSegment = input.segment !== undefined;
     const hasTotalSegments = input.totalSegments !== undefined;
@@ -561,7 +572,8 @@ export const customScanCmdInputSch = z
     }
 
     // ProjectionExpression and Select must be compatible.
-    if (input.projectionExpression) {
+    const hasProjection = input.projectionExpression !== undefined || input.attributes !== undefined;
+    if (hasProjection) {
       if (input.select !== undefined && input.select !== 'SPECIFIC_ATTRIBUTES') {
         ctx.addIssue({
           code: 'custom',
@@ -571,7 +583,7 @@ export const customScanCmdInputSch = z
       }
     }
 
-    if (input.select === 'SPECIFIC_ATTRIBUTES' && !input.projectionExpression) {
+    if (input.select === 'SPECIFIC_ATTRIBUTES' && !hasProjection) {
       ctx.addIssue({
         code: 'custom',
         path: ['projectionExpression'],
@@ -595,6 +607,7 @@ export const customTransactGetItemSch = z
   .object({
     tableName: trimmedRequiredStringSch,
     key: oneOrTwoAttributeRecordSch,
+    attributes: z.array(projectionAttributeSch).min(1).optional(),
     projectionExpression: optStringSch,
     expressionAttributeNames: stringRecordSch.optional(),
   })

@@ -9,14 +9,15 @@ import { TransactGetCommandInput } from '@aws-sdk/lib-dynamodb';
  * 1. Validate the input against the transact-get command schema.
  * 2. Convert each custom transact-get item into a DynamoDB `Get` operation.
  * 3. Preserve native JavaScript key values for the DocumentClient.
- * 4. Attach optional projection expressions and expression attribute names.
+ * 4. Generate projections from structured attribute paths or advanced raw expressions.
  * 5. Attach the consumed-capacity option.
  * 6. Return the validated `TransactGetCommandInput`.
  *
  * ### Notes:
  * - This builder uses `TransactGetCommandInput` from `@aws-sdk/lib-dynamodb`.
  * - Keys remain native JavaScript values and are not manually marshalled.
- * - Projection expressions and expression attribute names are scoped to each
+ * - Structured `attributes` generate projection expressions and aliases automatically.
+ * - Raw projection expressions and expression attribute names are scoped to each
  *   individual transactional get operation.
  * - The order of `TransactItems` is preserved.
  * - This function only constructs command input and never executes an AWS request.
@@ -49,24 +50,41 @@ export function buildValidatedTransactGetCommand(input: CustomTransactGetCmdInpu
     const parsed = customTransactGetCmdInputSch.parse(input);
 
     const commandInput: TransactGetCommandInput = {
-      TransactItems: parsed.transactItems.map((transactItem) => ({
-        Get: {
-          TableName: transactItem.tableName,
-          Key: transactItem.key,
+      TransactItems: parsed.transactItems.map((transactItem) => {
+        const projectionParts = transactItem.projectionExpression ? [transactItem.projectionExpression] : [];
+        const expressionAttributeNames = { ...transactItem.expressionAttributeNames };
+        const tokensByName = new Map<string, string>();
+        let nextToken = 0;
 
-          ...(transactItem.projectionExpression
-            ? {
-                ProjectionExpression: transactItem.projectionExpression,
-              }
-            : {}),
+        for (const attributePath of new Set(transactItem.attributes ?? [])) {
+          const parts = attributePath.match(/[^.[\]]+|\[\d+\]/g) ?? [];
+          projectionParts.push(
+            parts
+              .map((part) => {
+                if (part.startsWith('[')) return part;
+                let token = tokensByName.get(part);
+                if (token) return token;
+                token = `#attr${nextToken++}`;
+                while (token in expressionAttributeNames) token = `#attr${nextToken++}`;
+                tokensByName.set(part, token);
+                expressionAttributeNames[token] = part;
+                return token;
+              })
+              .reduce((path, part, index) => `${path}${index > 0 && !part.startsWith('[') ? '.' : ''}${part}`, '')
+          );
+        }
 
-          ...(transactItem.expressionAttributeNames && Object.keys(transactItem.expressionAttributeNames).length > 0
-            ? {
-                ExpressionAttributeNames: transactItem.expressionAttributeNames,
-              }
-            : {}),
-        },
-      })),
+        return {
+          Get: {
+            TableName: transactItem.tableName,
+            Key: transactItem.key,
+            ...(projectionParts.length > 0 && { ProjectionExpression: projectionParts.join(', ') }),
+            ...(Object.keys(expressionAttributeNames).length > 0 && {
+              ExpressionAttributeNames: expressionAttributeNames,
+            }),
+          },
+        };
+      }),
 
       ReturnConsumedCapacity: parsed.returnConsumedCapacity,
     };

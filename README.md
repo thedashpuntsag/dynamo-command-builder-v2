@@ -36,7 +36,7 @@ Choose a command from the welcome page or sidebar. Edit its parameters on the ri
 - **Response / Built SDK input** switches between the database response and the input produced by the builder.
 - **Format / Reset example** formats the current object or restores the selected preset. Drafts persist per command and table in browser local storage.
 
-The editor accepts JSON and JSON5 object literals, including comments, single quotes, unquoted keys, and trailing commas. Use tagged objects for native DynamoDB sets and binary values:
+The editor presents inputs as `const input = { ... };` and accepts JSON5-compatible object data, including comments, single quotes, unquoted keys, and trailing commas. Use tagged objects for native DynamoDB sets and binary values:
 
 ```js
 {
@@ -66,7 +66,7 @@ It also creates these global secondary indexes:
 
 Re-running the seed adds any missing indexes to an existing table, replaces the 50 seeded items, and preserves other items. It waits for every index to become active, verifies full item read-backs, and queries both `READY` and `PENDING` groups in timestamp order.
 
-The playground's runnable Query preset uses `pk4-sk4-index`; the Query and Scan all-fields presets use `status-createdAt-index`. GSI requests use `consistentRead: false`. After updating an existing checkout, re-run the seed and restart the playground; load a preset to replace an older saved draft.
+The playground's runnable Query preset uses `pk4-sk4-index`; the Query and Scan all-fields presets use `status-createdAt-index`. The default read presets use structured filters and attribute paths so the builders generate DynamoDB expressions and mappings. GSI requests use `consistentRead: false`. After updating an existing checkout, re-run the seed and restart the playground; load a preset to replace an older saved draft.
 
 ## Command builders
 

@@ -75,6 +75,12 @@ describe('example field coverage', () => {
       expect(() => buildCommand('update', { ...base, item: { status: 'UPDATED' } }, tableName)).not.toThrow();
       documented.add('item');
     }
+    if (example.id === 'scan') {
+      expect(example.allFieldsNote).toContain('filter:');
+      const { filters: _filters, filterJoin: _filterJoin, ...base } = example.input;
+      expect(() => buildCommand('scan', { ...base, filter: { attr: 'status', eq: 'READY' } }, tableName)).not.toThrow();
+      documented.add('filter');
+    }
     expect(documented).toEqual(new Set(Object.keys(schemas[example.id].shape)));
   });
   it('documents every nested batch field, including composite keys and both write operation types', () => {

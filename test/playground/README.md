@@ -10,7 +10,7 @@ vp run playground
 
 Open <http://127.0.0.1:5173>. See the [local testing guide](../../docs/local-test.md) for input syntax, example presets, configuration, and database cleanup.
 
-The seed creates 50 example items, `status-createdAt-index`, and four string-key GSIs named `pk1-sk1-index` through `pk4-sk4-index`, all with `ALL` projection. Re-run the seed to add missing indexes to an existing table. The runnable Query preset demonstrates PK4/SK4; the Query and Scan **All fields** presets use the status index with `consistentRead: false`. Seeded write presets use structured conditions; seeded Update and transactional Update use structured operations. The **All fields** write references retain raw-expression compatibility and explain mutually exclusive alternatives; select a preset to refresh an older saved draft.
+The seed creates 50 example items, `status-createdAt-index`, and four string-key GSIs named `pk1-sk1-index` through `pk4-sk4-index`, all with `ALL` projection. Re-run the seed to add missing indexes to an existing table. The runnable Query preset demonstrates PK4/SK4; the Query and Scan **All fields** presets use the status index with `consistentRead: false`. Default read presets use structured filters and attribute projections, while seeded write presets use structured conditions and operations. The **All fields** references retain raw-expression compatibility and explain mutually exclusive alternatives; select a preset to refresh an older saved draft.
 
 ## Project layout
 

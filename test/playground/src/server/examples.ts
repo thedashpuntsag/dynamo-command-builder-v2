@@ -27,11 +27,7 @@ export function getExamples(tableName: string): CommandExample[] {
     sortKeys: { sk4: { beginsWith: 'UPDATED#' } },
     filters: { status: { eq: 'READY' }, createdAt: { gte: 1_798_000_000_000 } },
     filterJoin: 'AND',
-    attributes: ['id', 'pk4', 'sk4', 'status', 'metadata', 'order.lines[0]'],
-    filterExpression: '#message <> :empty',
-    projectionExpression: '#payload, #tags',
-    expressionAttributeNames: { '#message': 'message', '#payload': 'payload', '#tags': 'tags' },
-    expressionAttributeValues: { ':empty': '' },
+    attributes: ['id', 'pk4', 'sk4', 'status', 'metadata', 'order.lines[0]', 'payload', 'tags'],
     limit: 10,
     consistentRead: false,
     scanIndexForward: true,
@@ -40,16 +36,9 @@ export function getExamples(tableName: string): CommandExample[] {
   };
   const scanInput = {
     tableName,
-    filterExpression: '#status = :status',
-    projectionExpression: '#id, #status, #metadata, #order.#lines[0]',
-    expressionAttributeNames: {
-      '#id': 'id',
-      '#status': 'status',
-      '#metadata': 'metadata',
-      '#order': 'order',
-      '#lines': 'lines',
-    },
-    expressionAttributeValues: { ':status': 'READY' },
+    filters: { status: 'READY', createdAt: { gte: 1_798_000_000_000 } },
+    filterJoin: 'AND',
+    attributes: ['id', 'status', 'metadata', 'order.lines[0]'],
     limit: 10,
     consistentRead: true,
     select: 'SPECIFIC_ATTRIBUTES',
@@ -154,9 +143,7 @@ export function getExamples(tableName: string): CommandExample[] {
       input: {
         tableName,
         key,
-        attributes: ['id', 'status', 'metadata', 'order.lines[0]'],
-        projectionExpression: '#payload, #tags',
-        expressionAttributeNames: { '#payload': 'payload', '#tags': 'tags' },
+        attributes: ['id', 'status', 'metadata', 'order.lines[0]', 'payload', 'tags'],
         consistentRead: true,
         returnConsumedCapacity: 'TOTAL',
       },
@@ -283,8 +270,7 @@ export function getExamples(tableName: string): CommandExample[] {
         transactItems: [key, { id: 'local-test-002' }].map((itemKey) => ({
           tableName,
           key: itemKey,
-          projectionExpression: '#id, #status, #metadata',
-          expressionAttributeNames: { '#id': 'id', '#status': 'status', '#metadata': 'metadata' },
+          attributes: ['id', 'status', 'metadata'],
         })),
         returnConsumedCapacity: 'TOTAL',
       },
@@ -302,21 +288,39 @@ export function getExamples(tableName: string): CommandExample[] {
 
   // Reference presets cover schema-dependent fields without breaking the seeded presets.
   const { item: _patch, ...updateExpressionInput } = updateInput;
+  const { filters: _scanFilters, filterJoin: _scanFilterJoin, ...rawScanInput } = scanInput;
   const allFields: Partial<Record<CommandId, Record<string, unknown>>> = {
     delete: { tableName, key: { id: 'playground-item' }, ...writeCondition, returnValues: 'ALL_OLD', ...writeMetrics },
     put: { tableName, item, ...writeCondition, returnValues: 'ALL_OLD', ...writeMetrics },
+    get: {
+      tableName,
+      key,
+      attributes: ['id', 'status', 'metadata', 'order.lines[0]'],
+      projectionExpression: '#payload, #tags',
+      expressionAttributeNames: { '#payload': 'payload', '#tags': 'tags' },
+      consistentRead: true,
+      returnConsumedCapacity: 'TOTAL',
+    },
     query: {
       ...queryInput,
       indexName: 'status-createdAt-index',
       partitionKeys: { status: 'READY' },
       sortKeys: { createdAt: { between: [1_798_000_000_000, 1_798_003_000_000] } },
       filters: { source: { eq: 'dynamo-command-builder-v2' }, updatedBy: { eq: 'local-seed' } },
+      filterExpression: '#message <> :empty',
+      projectionExpression: '#payload, #tags',
+      expressionAttributeNames: { '#message': 'message', '#payload': 'payload', '#tags': 'tags' },
+      expressionAttributeValues: { ':empty': '' },
       exclusiveStartKey: { id: 'local-test-001', status: 'READY', createdAt: 1_798_000_000_000 },
       consistentRead: false,
     },
     scan: {
-      ...scanInput,
+      ...rawScanInput,
       indexName: 'status-createdAt-index',
+      filterExpression: '#status = :status',
+      projectionExpression: '#payload, #tags',
+      expressionAttributeNames: { '#status': 'status', '#payload': 'payload', '#tags': 'tags' },
+      expressionAttributeValues: { ':status': 'READY' },
       exclusiveStartKey: { id: 'local-test-001', status: 'READY', createdAt: 1_798_000_000_000 },
       consistentRead: false,
     },
@@ -341,6 +345,16 @@ export function getExamples(tableName: string): CommandExample[] {
         },
       ],
     },
+    'transact-get': {
+      transactItems: [key, { id: 'local-test-002' }].map((itemKey) => ({
+        tableName,
+        key: itemKey,
+        attributes: ['id'],
+        projectionExpression: '#status, #metadata',
+        expressionAttributeNames: { '#status': 'status', '#metadata': 'metadata' },
+      })),
+      returnConsumedCapacity: 'TOTAL',
+    },
     'transact-write': {
       ...transactWriteInput,
       clientRequestToken: 'playground-transaction-example-001',
@@ -351,7 +365,7 @@ export function getExamples(tableName: string): CommandExample[] {
     get: 'All fields are included. attributes and projectionExpression are merged; keep their paths distinct to avoid overlapping projections.',
     query:
       'All fields are included. This example queries the seeded status-createdAt-index (status partition key, numeric createdAt sort key); the Seeded table preset demonstrates pk4-sk4-index. Run the seed again to add the indexes to an existing table. The example starts after local-test-001; replace exclusiveStartKey with a real LastEvaluatedKey when paginating. GSI reads require consistentRead: false, and filters must not target the index keys.',
-    scan: 'All fields are included. This example scans the seeded status-createdAt-index. Run the seed again to add it to an existing table. Replace exclusiveStartKey with the previous page’s LastEvaluatedKey. GSI reads require consistentRead: false; segment and totalSegments must be supplied together.',
+    scan: "All fields are included. This reference retains raw expression compatibility; the Seeded table preset uses generated filters and projections. For nested logic, use filter: { or: [{ attr: 'status', eq: 'READY' }, { attr: 'status', eq: 'PENDING' }] } instead of filters/filterJoin/filterExpression. Choose one filter mode. This example scans the seeded status-createdAt-index. Run the seed again to add it to an existing table. Replace exclusiveStartKey with the previous page’s LastEvaluatedKey. GSI reads require consistentRead: false; segment and totalSegments must be supplied together.",
     delete:
       "Seeded table demonstrates condition: { attr: 'id', notExists: true } inside an OR group. This reference uses raw expressions. Alternatively use conditions: { id: { notExists: true } }, conditionJoin: 'OR'. Choose one condition mode.",
     update:

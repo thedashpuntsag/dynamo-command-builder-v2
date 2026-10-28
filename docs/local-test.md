@@ -30,14 +30,14 @@ The seed creates `command-builder-test` if necessary and writes 50 deterministic
 
 The **All fields** presets and their notes cover supported parameters, including mutually exclusive condition/update modes, nested batch and transaction fields, and response options. The write references deliberately demonstrate raw-expression compatibility; the Seeded table presets demonstrate structured conditions and updates. In particular:
 
-- Query and Scan include `indexName` and `exclusiveStartKey`. The runnable Query preset uses `pk4-sk4-index`; their all-fields presets use `status-createdAt-index` and can run locally after re-seeding. The Query examples demonstrate structured key conditions and filters alongside raw expressions, ordering, limits, and projections. Both use eventually consistent reads because DynamoDB GSIs do not support strongly consistent reads.
+- Query and Scan include `indexName` and `exclusiveStartKey`. The runnable Query preset uses `pk4-sk4-index`; their all-fields presets use `status-createdAt-index` and can run locally after re-seeding. Their seeded presets use structured filters and `attributes`, allowing the builders to generate filter/projection expressions and mappings. Scan also accepts a nested `filter` tree for grouped logic. Raw expressions remain only in the all-fields compatibility references. Both use eventually consistent reads because DynamoDB GSIs do not support strongly consistent reads.
 - Batch Write includes a composite key (`id` + `version`) in its reference preset. The seeded table only has the `id` key.
 - Update uses `updates` and nested `{ attr, operator: value }` conditions in its seeded preset. It demonstrates SET, REMOVE, ADD, and DELETE without manual mappings. The all-fields reference uses raw `updateExpression` and legacy extra mappings. Choose exactly one of `updates`, `item`, or `updateExpression`.
 - Transact Write demonstrates PUT, UPDATE, DELETE, and CONDITION_CHECK on distinct items. The seeded preset uses structured conditions and updates; the all-fields reference retains raw-expression compatibility. Its reference preset adds `clientRequestToken`; choose a new token when changing a request.
 
 **Reset example** restores the currently selected preset. Existing browser drafts are retained when examples change; load a preset explicitly to replace an older draft.
 
-Inputs accept JSON or JSON5 object literal syntax, including comments, single quotes, unquoted property names, and trailing commas. Functions, imports, and arbitrary JavaScript expressions are not executed. Use these tagged objects for native DynamoDB types:
+Inputs are displayed as `const input = { ... };` and accept JSON5-compatible object data, including comments, single quotes, unquoted property names, and trailing commas. Functions, imports, and arbitrary JavaScript expressions are not executed. Use these tagged objects for native DynamoDB types:
 
 ```js
 {

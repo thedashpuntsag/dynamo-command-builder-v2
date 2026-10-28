@@ -52,6 +52,63 @@ describe('buildValidatedScanCommand', () => {
     });
   });
 
+  it('generates filter, projection, name, and value expressions from structured input', () => {
+    expect(
+      build({
+        tableName: 'orders',
+        filters: { status: 'CONFIRMED', amount: { gte: 1000 } },
+        filterJoin: 'AND',
+        attributes: ['id', 'status', 'customer.name', 'lines[0].sku'],
+      })
+    ).toStrictEqual({
+      TableName: 'orders',
+      ConsistentRead: false,
+      ReturnConsumedCapacity: 'NONE',
+      FilterExpression: '(#conditionName0 = :conditionValue0) AND (#conditionName1 >= :conditionValue1)',
+      ProjectionExpression: '#scanAttr0, #scanAttr1, #scanAttr2.#scanAttr3, #scanAttr4[0].#scanAttr5',
+      ExpressionAttributeNames: {
+        '#conditionName0': 'status',
+        '#conditionName1': 'amount',
+        '#scanAttr0': 'id',
+        '#scanAttr1': 'status',
+        '#scanAttr2': 'customer',
+        '#scanAttr3': 'name',
+        '#scanAttr4': 'lines',
+        '#scanAttr5': 'sku',
+      },
+      ExpressionAttributeValues: { ':conditionValue0': 'CONFIRMED', ':conditionValue1': 1000 },
+    });
+  });
+
+  it('supports nested structured filters without handwritten expressions', () => {
+    const command = build({
+      tableName: 'orders',
+      filter: {
+        or: [
+          { attr: 'status', eq: 'READY' },
+          {
+            and: [
+              { attr: 'total', gte: 100 },
+              { attr: 'customer.name', beginsWith: 'A' },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(command.FilterExpression).toContain(' OR ');
+    expect(command.FilterExpression).toContain('begins_with');
+    expect(command.ExpressionAttributeNames).toMatchObject({
+      '#conditionName0': 'status',
+      '#conditionName2': 'customer',
+    });
+    expect(command.ExpressionAttributeValues).toMatchObject({
+      ':conditionValue0': 'READY',
+      ':conditionValue1': 100,
+      ':conditionValue2': 'A',
+    });
+  });
+
   it('combines inferred aliases from filter and projection expressions', () => {
     expect(
       build({
@@ -322,6 +379,11 @@ describe('buildValidatedScanCommand', () => {
     ['segment greater than totalSegments', { tableName: 'orders', segment: 5, totalSegments: 4 }],
     ['negative segment', { tableName: 'orders', segment: -1, totalSegments: 4 }],
     ['invalid select value', { tableName: 'orders', select: 'ITEMS' }],
+    [
+      'multiple filter modes',
+      { tableName: 'orders', filters: { status: 'READY' }, filterExpression: '#status = :status' },
+    ],
+    ['filterJoin without filters', { tableName: 'orders', filterJoin: 'OR' }],
     ['COUNT with a projection', { tableName: 'orders', select: 'COUNT', projectionExpression: 'id, createdAt' }],
     ['SPECIFIC_ATTRIBUTES without a projection', { tableName: 'orders', select: 'SPECIFIC_ATTRIBUTES' }],
     ['invalid capacity option', { tableName: 'orders', returnConsumedCapacity: 'ALL' }],

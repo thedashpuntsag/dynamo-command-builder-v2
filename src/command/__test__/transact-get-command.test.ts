@@ -68,6 +68,30 @@ describe('buildValidatedTransactGetCommand', () => {
     expect(command.TransactItems?.[0]?.Get?.Key).toStrictEqual({ id: 'user-001' });
   });
 
+  it('generates per-item projection expressions from structured attributes', () => {
+    const get = build({
+      transactItems: [
+        {
+          tableName: 'users',
+          key: { id: 'user-001' },
+          attributes: ['id', 'profile.name', 'roles[0]'],
+        },
+      ],
+    }).TransactItems?.[0]?.Get;
+
+    expect(get).toStrictEqual({
+      TableName: 'users',
+      Key: { id: 'user-001' },
+      ProjectionExpression: '#attr0, #attr1.#attr2, #attr3[0]',
+      ExpressionAttributeNames: {
+        '#attr0': 'id',
+        '#attr1': 'profile',
+        '#attr2': 'name',
+        '#attr3': 'roles',
+      },
+    });
+  });
+
   it('preserves both attributes of a composite primary key', () => {
     const command = build({
       transactItems: [
