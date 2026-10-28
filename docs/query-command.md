@@ -3,8 +3,9 @@
 `buildValidatedQueryCommand` creates an AWS SDK v3 DocumentClient `QueryCommandInput` without requiring a table, index, or entity definition.
 
 ```ts
-import { QueryCommand } from '@aws-sdk/lib-dynamodb';
-import { buildValidatedQueryCommand } from 'dynamo-command-builder-v2';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { buildValidatedQueryCommand } from 'dynamo-craft';
 
 const input = buildValidatedQueryCommand({
   tableName: 'Orders',
@@ -24,14 +25,19 @@ const input = buildValidatedQueryCommand({
   attributes: ['orderId', 'status', 'total'],
 });
 
+const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'ap-southeast-1' }));
 const result = await documentClient.send(new QueryCommand(input));
 ```
+
+The first example requires a multi-attribute GSI with partition attributes `tenantId` and `region`, and sort attributes `year` and `createdAt` in that order. See the [AWS multi-attribute GSI documentation](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.DesignPattern.MultiAttributeKeys.html). This is a schema-specific example, separate from the seeded single-partition-key table. Subsequent builder examples use a table keyed by `customerId`.
 
 ## Selecting returned attributes
 
 The `attributes` array specifies which item fields DynamoDB should return. The builder converts these paths into a collision-safe DynamoDB `ProjectionExpression` and `ExpressionAttributeNames` map.
 
 ```ts
+import { buildValidatedQueryCommand } from 'dynamo-craft';
+
 const input = buildValidatedQueryCommand({
   tableName: 'Orders',
   partitionKeys: {
@@ -43,10 +49,9 @@ const input = buildValidatedQueryCommand({
 
 The generated command input contains a projection similar to:
 
-```ts
+```json5
 {
-  ProjectionExpression:
-    '#projection0_0, #projection1_0, #projection2_0, #projection3_0',
+  ProjectionExpression: '#projection0_0, #projection1_0, #projection2_0, #projection3_0',
   ExpressionAttributeNames: {
     '#projection0_0': 'orderId',
     '#projection1_0': 'status',
@@ -60,13 +65,13 @@ The generated command input contains a projection similar to:
 
 Use dot notation to select a property inside a DynamoDB map:
 
-```ts
-attributes: ['orderId', 'customer.name', 'customer.address.city'];
+```json5
+{ attributes: ['orderId', 'customer.name', 'customer.address.city'] }
 ```
 
 A matching returned item has approximately this shape:
 
-```ts
+```json5
 {
   orderId: 'order-1',
   customer: {
@@ -82,8 +87,8 @@ A matching returned item has approximately this shape:
 
 Use a numeric bracket segment to select a particular list element:
 
-```ts
-attributes: ['items[0].sku', 'items[0].quantity'];
+```json5
+{ attributes: ['items[0].sku', 'items[0].quantity'] }
 ```
 
 ### Validation
@@ -92,14 +97,14 @@ Every entry must be a non-empty attribute path.
 
 Valid paths:
 
-```ts
-attributes: ['orderId', 'customer.name', 'items[0].sku'];
+```json5
+{ attributes: ['orderId', 'customer.name', 'items[0].sku'] }
 ```
 
 Invalid paths:
 
-```ts
-attributes: ['', '.customer', 'customer.', 'items[]', 'items[abc]'];
+```json5
+{ attributes: ['', '.customer', 'customer.', 'items[]', 'items[abc]'] }
 ```
 
 Duplicate paths are removed automatically. For example, `['status', 'status', 'total']` behaves like `['status', 'total']`.
@@ -108,7 +113,7 @@ Duplicate paths are removed automatically. For example, `['status', 'status', 't
 
 `filters` and `attributes` have different responsibilities:
 
-```ts
+```json5
 {
   filters: {
     status: 'ACTIVE',
@@ -126,7 +131,7 @@ A projection does not reduce read-capacity consumption. DynamoDB reads each item
 
 When `attributes` is provided, omit `select` or set it to `SPECIFIC_ATTRIBUTES`:
 
-```ts
+```json5
 {
   attributes: ['orderId', 'status'],
   select: 'SPECIFIC_ATTRIBUTES',
@@ -135,7 +140,7 @@ When `attributes` is provided, omit `select` or set it to `SPECIFIC_ATTRIBUTES`:
 
 Other selection modes conflict with a projection:
 
-```ts
+```json5
 // Invalid
 {
   attributes: ['orderId'],

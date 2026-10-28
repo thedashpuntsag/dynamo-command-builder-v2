@@ -3,7 +3,7 @@
 Use `updates` to build Update and transactional Update requests without writing DynamoDB expressions or placeholder maps. Each entry names an `attr` and exactly one operation:
 
 ```typescript
-import { buildValidatedUpdateCommand } from 'dynamo-command-builder-v2';
+import { buildValidatedUpdateCommand } from 'dynamo-craft';
 
 const input = buildValidatedUpdateCommand({
   tableName: 'Orders',
@@ -55,6 +55,8 @@ All right-hand references read the original item state. Array order does not mak
 Transactional Update accepts the same `updates` array and condition syntax:
 
 ```typescript
+import { buildValidatedTransactWriteCommand } from 'dynamo-craft';
+
 buildValidatedTransactWriteCommand({
   transactItems: [
     {

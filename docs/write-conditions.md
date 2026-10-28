@@ -7,7 +7,7 @@ See [condition operators and validation](./put-command.md) for the full syntax.
 ## Update with optimistic locking
 
 ```typescript
-import { buildValidatedUpdateCommand } from 'dynamo-command-builder-v2';
+import { buildValidatedUpdateCommand } from 'dynamo-craft';
 
 const input = buildValidatedUpdateCommand({
   tableName: 'Orders',
@@ -34,6 +34,8 @@ See [structured updates](./update-command.md) for SET, REMOVE, ADD, DELETE, arit
 Existing explicit update expressions can also use structured conditions:
 
 ```typescript
+import { buildValidatedUpdateCommand } from 'dynamo-craft';
+
 buildValidatedUpdateCommand({
   tableName: 'Orders',
   key: { id: 'order-1' },
@@ -49,7 +51,7 @@ Update mappings belong to the update expression. Generated condition names and v
 ## Conditional delete
 
 ```typescript
-import { buildValidatedDeleteCommandInput } from 'dynamo-command-builder-v2';
+import { buildValidatedDeleteCommandInput } from 'dynamo-craft';
 
 buildValidatedDeleteCommandInput({
   tableName: 'Orders',
@@ -69,7 +71,7 @@ buildValidatedDeleteCommandInput({
 Each transaction item has its own condition and placeholder scope:
 
 ```typescript
-import { buildValidatedTransactWriteCommand } from 'dynamo-command-builder-v2';
+import { buildValidatedTransactWriteCommand } from 'dynamo-craft';
 
 buildValidatedTransactWriteCommand({
   transactItems: [

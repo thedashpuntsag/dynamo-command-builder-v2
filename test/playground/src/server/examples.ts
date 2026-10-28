@@ -198,7 +198,7 @@ export function getExamples(tableName: string): CommandExample[] {
       id: 'update',
       name: 'Update',
       group: 'Write',
-      description: 'Build an update expression from an object patch.',
+      description: 'Apply structured SET, REMOVE, ADD, and DELETE operations with nested conditions.',
       builder: 'buildValidatedUpdateCommand',
       writes: true,
       input: {
@@ -346,7 +346,7 @@ export function getExamples(tableName: string): CommandExample[] {
     },
   };
   const notes: Partial<Record<CommandId, string>> = {
-    put: "Seeded table demonstrates conditions with conditionJoin. This reference uses raw conditionExpression and expression maps. Alternatively use condition: { attr: 'id', notExists: true } for a nested conditions; condition, conditions, and conditionExpression are mutually exclusive. Conditions check the existing item before replacement.",
+    put: "Seeded table demonstrates conditions with conditionJoin. This reference uses raw conditionExpression and expression maps. Alternatively use condition: { attr: 'id', notExists: true } for nested conditions; condition, conditions, and conditionExpression are mutually exclusive. Conditions check the existing item before replacement.",
     get: 'All fields are included. attributes and projectionExpression are merged; keep their paths distinct to avoid overlapping projections.',
     query:
       'All fields are included. This example queries the seeded status-createdAt-index (status partition key, numeric createdAt sort key). Run the seed again to add the index to an existing table. The example starts after local-test-001; replace exclusiveStartKey with a real LastEvaluatedKey when paginating. GSI reads require consistentRead: false, and filters must not target the index keys.',

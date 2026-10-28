@@ -11,8 +11,10 @@
  * @returns A number or an exact bigint for integral values outside the safe number range.
  * @throws If syntax, precision, range, or native decimal representation is unsupported.
  * @example
+ * ```ts
  * parseDynamoNumber('1e3'); // 1000
  * parseDynamoNumber('9007199254740993'); // 9007199254740993n
+ * ```
  */
 export function parseDynamoNumber(value: string): number | bigint {
   /**

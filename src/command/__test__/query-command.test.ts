@@ -65,6 +65,56 @@ describe('buildValidatedQueryCommand', () => {
     });
   });
 
+  it('builds a multi-attribute GSI query with four partition and four sort attributes', () => {
+    const command = buildValidatedQueryCommand({
+      tableName: 'Orders',
+      indexName: 'byTenantRegionTypeChannelDate',
+      partitionKeys: {
+        tenantId: 'tenant-1',
+        region: 'MN',
+        entityType: 'ORDER',
+        channel: 'WEB',
+      },
+      sortKeys: {
+        year: 2026,
+        month: 10,
+        day: 28,
+        createdAt: { between: ['2026-10-28T00:00:00.000Z', '2026-10-28T23:59:59.999Z'] },
+      },
+    });
+
+    expect(command).toStrictEqual({
+      TableName: 'Orders',
+      IndexName: 'byTenantRegionTypeChannelDate',
+      KeyConditionExpression:
+        '#pk0 = :pk0 AND #pk1 = :pk1 AND #pk2 = :pk2 AND #pk3 = :pk3 AND #sk0 = :sk0 AND #sk1 = :sk1 AND #sk2 = :sk2 AND #sk3 BETWEEN :sk3Start AND :sk3End',
+      ExpressionAttributeNames: {
+        '#pk0': 'tenantId',
+        '#pk1': 'region',
+        '#pk2': 'entityType',
+        '#pk3': 'channel',
+        '#sk0': 'year',
+        '#sk1': 'month',
+        '#sk2': 'day',
+        '#sk3': 'createdAt',
+      },
+      ExpressionAttributeValues: {
+        ':pk0': 'tenant-1',
+        ':pk1': 'MN',
+        ':pk2': 'ORDER',
+        ':pk3': 'WEB',
+        ':sk0': 2026,
+        ':sk1': 10,
+        ':sk2': 28,
+        ':sk3Start': '2026-10-28T00:00:00.000Z',
+        ':sk3End': '2026-10-28T23:59:59.999Z',
+      },
+      ConsistentRead: false,
+      ScanIndexForward: true,
+      ReturnConsumedCapacity: 'NONE',
+    });
+  });
+
   it.each([
     [{ lt: 10 }, '#sk0 < :sk0'],
     [{ lte: 10 }, '#sk0 <= :sk0'],

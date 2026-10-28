@@ -5,12 +5,12 @@ A local React application for building and executing library commands against Dy
 ```bash
 vp run local:dynamo:start
 vp run local:dynamo:seed
-vp run local:playground
+vp run playground
 ```
 
 Open <http://127.0.0.1:5173>. See the [local testing guide](../../docs/local-test.md) for input syntax, example presets, configuration, and database cleanup.
 
-The seed creates 50 example items and `status-createdAt-index`, a global secondary index with a string `status` partition key, numeric `createdAt` sort key, and `ALL` projection. Re-run the seed to add the index to an existing table. The Query and Scan **All fields** presets use this index with `consistentRead: false`; select a preset to refresh an older saved draft.
+The seed creates 50 example items and `status-createdAt-index`, a global secondary index with a string `status` partition key, numeric `createdAt` sort key, and `ALL` projection. Re-run the seed to add the index to an existing table. Seeded write presets use structured conditions; seeded Update and transactional Update use structured operations. The **All fields** write references retain raw-expression compatibility and explain mutually exclusive alternatives. The Query and Scan **All fields** presets use this index with `consistentRead: false`; select a preset to refresh an older saved draft.
 
 ## Project layout
 
@@ -42,7 +42,8 @@ playground/
 ├── tests/
 │   ├── api.test.ts           # API validation and execution behavior
 │   ├── codec.test.ts         # Native type encoding and parsing
-│   └── commands.test.ts      # Example validation and schema field coverage
+│   ├── commands.test.ts      # Example validation and schema field coverage
+│   └── documentation.test.ts # Documentation/JSDoc snippet and script checks
 └── scripts/
     └── smoke.ts              # Integration check against a running playground
 ```
@@ -54,20 +55,20 @@ Keep browser components and pages separate from `server/`. Only shared types and
 ```bash
 vp check
 vp test run
-vp run local:playground:typecheck
-vp run local:playground:build
+vp run playground:typecheck
+vp run playground:build
 ```
 
-With the playground and seeded database running:
+With the playground and seeded database running, verify both presets, advanced structured operators, and the composite-key reference (in a temporary table):
 
 ```bash
-vp run local:playground:smoke
+vp run playground:smoke
 ```
 
 To serve the built application with its local API:
 
 ```bash
-vp run local:playground:preview
+vp run playground:preview
 ```
 
 Restart the playground after changing server-side source. Both development and preview load the repository-root `.env` and enforce the configured local table.

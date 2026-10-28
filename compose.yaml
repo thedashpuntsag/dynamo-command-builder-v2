@@ -16,7 +16,7 @@
 #   DYNAMODB_ADMIN_PORT=8001
 #
 # Uses local credentials and endpoints; AWS credentials are unnecessary.
-# See doc/local-development.md for application configuration.
+# See docs/local-test.md for application configuration.
 
 services:
   dynamodb-local:

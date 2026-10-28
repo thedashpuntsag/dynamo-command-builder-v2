@@ -78,6 +78,8 @@ export const docClient = DynamoDBDocumentClient.from(client, {
 
 Reuse these clients across requests (for example, initialize them outside AWS Lambda handlers).
 
+The following request snippets reuse `client` or `docClient` from this section; choose the client matching the imported command. Table and index schemas are assumptions for each example, not the playground seed schema.
+
 ## 5. Put an item
 
 ### Low-level
@@ -223,7 +225,11 @@ Table operations such as `CreateTableCommand` and `UpdateTableCommand` remain lo
 
 ## 9. Manual marshalling and unmarshalling
 
-`@aws-sdk/util-dynamodb` supplies the conversion utilities `marshall()` and `unmarshall()`.
+`@aws-sdk/util-dynamodb` supplies the conversion utilities `marshall()` and `unmarshall()`. Install it explicitly when using the following example:
+
+```bash
+npm install @aws-sdk/util-dynamodb
+```
 
 ```typescript
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
@@ -313,7 +319,7 @@ The Document Client is usually a good productivity default, but performance-sens
 
 Consider this conditional put:
 
-```typescript
+```json5
 {
   ConditionExpression: '#status = :expectedStatus',
   ExpressionAttributeNames: {

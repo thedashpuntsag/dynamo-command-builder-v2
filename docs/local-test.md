@@ -12,7 +12,7 @@ You need the development requirements in the [README](../README.md#requirements)
 vp install
 vp run local:dynamo:start
 vp run local:dynamo:seed
-vp run local:playground
+vp run playground
 ```
 
 Open <http://127.0.0.1:5173>. The welcome page links to all ten command builders: Get, Query, Scan, Put, Update, Delete, Batch Get, Batch Write, Transact Get, and Transact Write. Each command has its own URL, for example `/#/command/get`.
@@ -28,12 +28,12 @@ The seed creates `command-builder-test` if necessary and writes 50 deterministic
 - **Run command:** invoke the public library builder, then send its generated input through the AWS SDK to DynamoDB Local. You can also press `Cmd+Enter` or `Ctrl+Enter` inside the editor.
 - **Format / Reset example:** format the current object or restore the command's original example. Output can be copied with the copy button.
 
-The **All fields** presets show every supported parameter, including nested batch and transaction fields, condition expressions, expression mappings, and response options. Their notes explain dependencies and alternatives. In particular:
+The **All fields** presets and their notes cover supported parameters, including mutually exclusive condition/update modes, nested batch and transaction fields, and response options. The write references deliberately demonstrate raw-expression compatibility; the Seeded table presets demonstrate structured conditions and updates. In particular:
 
 - Query and Scan include `indexName` and `exclusiveStartKey`. Their all-fields presets use the seeded `status-createdAt-index` and can run locally after re-seeding. Query uses `status: READY` and a `createdAt` range, demonstrating structured filters alongside raw expressions, ordering, limits, and projections. Both use eventually consistent reads because DynamoDB GSIs do not support strongly consistent reads.
 - Batch Write includes a composite key (`id` + `version`) in its reference preset. The seeded table only has the `id` key.
-- Update uses `item` in its seeded preset and `updateExpression` in its all-fields preset. These fields cannot be supplied together. Both presets show the legacy extra expression mappings.
-- Transact Write demonstrates PUT, UPDATE, DELETE, and CONDITION_CHECK on distinct items. Its reference preset adds `clientRequestToken`; choose a new token when changing a request.
+- Update uses `updates` and nested `{ attr, operator: value }` conditions in its seeded preset. It demonstrates SET, REMOVE, ADD, and DELETE without manual mappings. The all-fields reference uses raw `updateExpression` and legacy extra mappings. Choose exactly one of `updates`, `item`, or `updateExpression`.
+- Transact Write demonstrates PUT, UPDATE, DELETE, and CONDITION_CHECK on distinct items. The seeded preset uses structured conditions and updates; the all-fields reference retains raw-expression compatibility. Its reference preset adds `clientRequestToken`; choose a new token when changing a request.
 
 **Reset example** restores the currently selected preset. Existing browser drafts are retained when examples change; load a preset explicitly to replace an older draft.
 
@@ -86,22 +86,22 @@ The playground binds to `127.0.0.1:5173`, uses explicit dummy credentials, requi
 ```bash
 vp check
 vp test run
-vp run local:playground:typecheck
-vp run local:playground:build
+vp run playground:typecheck
+vp run playground:build
 ```
 
 With DynamoDB seeded and the playground running, verify every builder against the real local service:
 
 ```bash
-vp run local:playground:smoke
+vp run playground:smoke
 ```
 
-The smoke check builds both presets for all ten commands, executes the seeded-table presets and the Query/Scan index presets, verifies native sets and binary values, and cleans up its uniquely named temporary writes. It expects the playground at `http://127.0.0.1:5173`; override `PLAYGROUND_URL` to test another local port.
+The smoke check builds and executes both presets for all ten commands. Batch Write’s composite-key reference runs against a uniquely named temporary table with its required schema; the table is deleted afterward. It verifies all ten structured update operations, every structured condition operator, failed-condition behavior, native sets and binary values, then removes its uniquely named temporary writes. It expects the playground at `http://127.0.0.1:5173`; override `PLAYGROUND_URL` to test another local port.
 
 To serve the built UI with the same local API, stop the development server and run:
 
 ```bash
-vp run local:playground:preview
+vp run playground:preview
 ```
 
 ## Clear, inspect, and stop

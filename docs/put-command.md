@@ -9,6 +9,8 @@ The same syntax is supported by Update, Delete, and transactional writes; see [w
 A condition names an `attr` and exactly one operator. Create an item only if its key does not exist:
 
 ```typescript
+import { buildValidatedPutCommand } from 'dynamo-craft';
+
 buildValidatedPutCommand({
   tableName: 'Users',
   item: { id: 'user-1', name: 'Dash' },
@@ -19,9 +21,10 @@ buildValidatedPutCommand({
 Equality and prefix checks use values directly:
 
 ```typescript
-condition: { attr: 'status', eq: 'PENDING' }
-// Or:
-condition: { attr: 'status', beginsWith: 'PENDING' }
+import type { Condition } from 'dynamo-craft';
+
+const equality: Condition = { attr: 'status', eq: 'PENDING' };
+const prefix: Condition = { attr: 'status', beginsWith: 'PENDING' };
 ```
 
 Supported operators:
@@ -44,6 +47,8 @@ Supported operators:
 Combine leaves with `and`, `or`, and `not`. Logical `and`/`or` groups require at least two children. Each child is a complete condition object, so the same attribute can appear more than once:
 
 ```typescript
+import { buildValidatedPutCommand } from 'dynamo-craft';
+
 buildValidatedPutCommand({
   tableName: 'Orders',
   item: { id: 'order-1', version: 4, status: 'CONFIRMED' },
@@ -66,6 +71,8 @@ buildValidatedPutCommand({
 });
 ```
 
+This replacement requires an existing order at version 3 with an allowed status, a nonempty `items` list, and a first SKU starting with `SKU-`. Put replaces the entire item; include every attribute you want to retain in `item`.
+
 Paths use dots for map traversal and brackets for list indexes. Every segment is aliased automatically. Literal attribute names containing dots or brackets require a raw expression with explicit aliases.
 
 ## Record shorthand
@@ -73,7 +80,13 @@ Paths use dots for map traversal and brackets for list indexes. Every segment is
 The optional `conditions` record remains available for simple checks. Entries join with `AND`; set `conditionJoin: 'OR'` to use `OR`:
 
 ```typescript
-conditions: { version: 3, deletedAt: { notExists: true } }
+import { buildValidatedPutCommand } from 'dynamo-craft';
+
+buildValidatedPutCommand({
+  tableName: 'Orders',
+  item: { id: 'order-1', version: 4 },
+  conditions: { version: 3, deletedAt: { notExists: true } },
+});
 ```
 
 Direct scalar, binary, list, and set values mean equality. Wrap map equality explicitly: `metadata: { eq: { source: 'API' } }`.

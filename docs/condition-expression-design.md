@@ -9,14 +9,16 @@ Implemented for Put, Update, Delete, and all transactional write operations, inc
 Use attribute-based leaves with literal values:
 
 ```typescript
-condition: { attr: 'status', beginsWith: 'PENDING' }
-condition: { attr: 'status', eq: 'PENDING' }
-condition: {
+import type { Condition } from 'dynamo-craft';
+
+const prefix: Condition = { attr: 'status', beginsWith: 'PENDING' };
+const equality: Condition = { attr: 'status', eq: 'PENDING' };
+const grouped: Condition = {
   and: [
     { attr: 'status', eq: 'PENDING' },
     { attr: 'version', gte: 3 },
   ],
-}
+};
 ```
 
 Each leaf contains `attr` and exactly one operator. Logical nodes contain exactly one of `and`, `or`, or `not`. Leaves cannot also contain logical groups. `and`/`or` require at least two children; `not` takes one condition.

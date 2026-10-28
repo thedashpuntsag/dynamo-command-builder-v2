@@ -21,7 +21,7 @@ Run these commands from the repository root:
 vp install
 vp run local:dynamo:start
 vp run local:dynamo:seed
-vp run local:playground
+vp run playground
 ```
 
 Open the playground at <http://127.0.0.1:5173>. DynamoDB Local runs at <http://localhost:8000>, and DynamoDB Admin is available at <http://localhost:8001>. No AWS account or real credentials are required.
@@ -71,7 +71,7 @@ The package exports builders for Get, Put, Update, Delete, Query, Scan, Batch Ge
 For example, build a query against the seeded index:
 
 ```typescript
-import { buildValidatedQueryCommand } from 'dynamo-command-builder-v2';
+import { buildValidatedQueryCommand } from 'dynamo-craft';
 
 const input = buildValidatedQueryCommand({
   tableName: 'command-builder-test',
@@ -115,8 +115,8 @@ vp check
 vp test run
 vp run typecheck
 vp run build
-vp run local:playground:typecheck
-vp run local:playground:build
+vp run playground:typecheck
+vp run playground:build
 ```
 
 `vp check` is the Vite+ formatting, lint, and type check command. `vp run check` runs this repository's aggregate script, which also runs library tests and builds the library.
@@ -124,12 +124,12 @@ vp run local:playground:build
 With the playground and seeded database running, run the integration smoke check:
 
 ```bash
-vp run local:playground:smoke
+vp run playground:smoke
 ```
 
-It builds both presets for all ten commands, executes the seeded presets and index Query/Scan presets, and cleans up its temporary writes. Use `PLAYGROUND_URL` to target a playground running on another local port.
+It builds and executes both presets for all ten commands, verifies structured update/condition behavior, and cleans up its temporary writes. The composite-key Batch Write reference uses a temporary table with its required schema, which is deleted afterward. Use `PLAYGROUND_URL` to target a playground running on another local port.
 
-To serve the built playground with its local API, stop the development server and run `vp run local:playground:preview`. Restart the playground after changing server-side source or environment settings.
+To serve the built playground with its local API, stop the development server and run `vp run playground:preview`. Restart the playground after changing server-side source or environment settings.
 
 ## Documentation
 
