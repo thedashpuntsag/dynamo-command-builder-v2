@@ -1,13 +1,19 @@
 /**
- * Extracts expression attribute names from a DynamoDB expression.
+ * Infers alias mappings from hash-prefixed tokens in any DynamoDB expression.
  *
- * ### Process flow:
- * 1. Find each expression attribute-name token beginning with `#`.
- * 2. Add an entry mapping each token to its unprefixed name.
- * 3. Return the resulting record of expression attribute names.
+ * ### Process Flow:
+ * 1. Find tokens matching a hash followed by letters, digits, or underscores.
+ * 2. Map each token to the same text without its leading hash.
+ * 3. Return the mappings, retaining one entry per distinct token.
  *
- * @param {string} expression - The projection expression string.
- * @returns {Record<string, string>} - A record of expression attribute names.
+ * @param expression - Condition, projection, filter, or update expression to scan.
+ * @returns Inferred name mappings; explicit caller mappings may override them.
+ *
+ * @example
+ * ```ts
+ * extractExpAttributeNamesFromExpression('#status = :status AND attribute_exists(#id)');
+ * // { '#status': 'status', '#id': 'id' }
+ * ```
  */
 export function extractExpAttributeNamesFromExpression(expression: string): Record<string, string> {
   const result: Record<string, string> = {};
@@ -20,21 +26,23 @@ export function extractExpAttributeNamesFromExpression(expression: string): Reco
 }
 
 /**
- * Extracts expression attribute names from a DynamoDB UPDATE expression.
+ * Infers aliases from left-hand sides of simple comma-separated SET assignments.
  *
- * Example:
- *   'SET #size = :size, #count = :count' → { '#size': 'size', '#count': 'count' }
+ * ### Process Flow:
+ * 1. Remove a leading SET keyword and surrounding whitespace.
+ * 2. Split on commas and take the left-hand side of each assignment.
+ * 3. Keep hash-prefixed left-hand sides and map them to their unprefixed text.
  *
- * ### Process flow:
- * 1. Remove the leading "SET " from the expression.
- * 2. Split the remaining string by commas to get individual assignments.
- * 3. For each assignment, split by '=' to isolate the attribute name.
- * 4. Trim whitespace and check if the attribute name starts with '#'.
- * 5. If it does, add an entry to the result object mapping the attribute name to its unprefixed version.
- * 6. Return the resulting record of expression attribute names.
+ * This helper does not parse the full update grammar or commas inside function calls; use extractExpAttributeNamesFromExpression to scan all tokens.
  *
- * @param {string} expression - The DynamoDB UPDATE expression.
- * @returns {Record<string, string>} - A record of expression attribute names.
+ * @param expression - Simple SET expression to inspect.
+ * @returns Mappings for hash-prefixed assignment targets.
+ *
+ * @example
+ * ```ts
+ * extractExpAttributeNamesFromUpdateExp('SET #status = :next, #count = :count');
+ * // { '#status': 'status', '#count': 'count' }
+ * ```
  */
 export function extractExpAttributeNamesFromUpdateExp(expression: string): Record<string, string> {
   const result: Record<string, string> = {};

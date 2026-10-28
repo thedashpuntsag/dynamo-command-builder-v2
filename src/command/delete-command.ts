@@ -1,3 +1,4 @@
+import { compileStructuredCondition } from '../utils/condition-expression';
 import { customDeleteCmdInputSch } from '@/types';
 import type { DeleteCommandInput } from '@aws-sdk/lib-dynamodb';
 
@@ -44,6 +45,8 @@ export function buildValidatedDeleteCommandInput(input: unknown): DeleteCommandI
   try {
     const validatedInput = customDeleteCmdInputSch.parse(input);
 
+    const compiled = compileStructuredCondition(validatedInput);
+
     return {
       TableName: validatedInput.tableName,
       Key: validatedInput.key,
@@ -52,6 +55,13 @@ export function buildValidatedDeleteCommandInput(input: unknown): DeleteCommandI
       ReturnConsumedCapacity: validatedInput.returnConsumedCapacity,
       ReturnItemCollectionMetrics: validatedInput.returnItemCollectionMetrics,
 
+      ...(compiled && {
+        ConditionExpression: compiled.expression,
+        ExpressionAttributeNames: compiled.expressionAttributeNames,
+        ...(Object.keys(compiled.expressionAttributeValues).length > 0 && {
+          ExpressionAttributeValues: compiled.expressionAttributeValues,
+        }),
+      }),
       ...(validatedInput.conditionExpression && {
         ConditionExpression: validatedInput.conditionExpression,
       }),

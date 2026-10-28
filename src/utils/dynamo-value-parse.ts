@@ -1,36 +1,26 @@
 import { Buffer } from 'node:buffer';
 
 /**
- * Parses a partition or sort key value based on its type.
+ * Converts a legacy string-encoded DynamoDB value into a native JavaScript value.
  *
- * ### Process flow:
- * 1. Check the provided key type.
- * 2. Depending on the type, convert the string value to the appropriate JavaScript type:
- *   - 'S' → string
- *   - 'N' → number
- *   - 'BOOL' → boolean
- *   - 'NULL' → null
- *   - 'M' → object (parsed from JSON string)
- *   - 'L' → array (parsed from JSON string)
- *   - 'SS' → array of strings (split by commas)
- *   - 'NS' → array of numbers (split by commas)
- *   - 'BS' → array of binary data (split by commas, base64 encoded)
- * 3. Return the parsed value.
+ * ### Process Flow:
+ * 1. Select conversion behavior from the supplied type code.
+ * 2. Convert scalars, parse JSON for M/L, or split comma-separated SS/NS/BS entries.
+ * 3. Return the converted value, filtering invalid numeric entries from NS.
  *
- * ### Notes:
- * - For types 'M' and 'L', the function expects a valid JSON string representation.
- * - For set types ('SS', 'NS', 'BS'), the input string should have items separated by commas.
- * - If the key type is unrecognized, an error is thrown.
+ * This is a converter, not a strict schema validator: N uses Number(), BOOL compares against "true" case-insensitively, and set codes return arrays.
  *
+ * @param key - Encoded scalar, JSON text, or comma-separated collection.
+ * @param keyType - Type code: S, N, BOOL, NULL, M, L, SS, NS, or BS.
+ * @returns A scalar, parsed JSON value, array, or array of Node.js Buffers.
+ * @throws If the type code is unsupported or M/L contains malformed JSON.
  *
- * @param key - The value of the partition key as a string.
- * @param type - The type of the partition key (e.g., 'S', 'N', 'BOOL', etc.).
- * @returns The parsed partition key value in its appropriate type.
- * @throws Error if the partition key type is invalid or the format is incorrect for types 'M' or 'L'.
  * @example
- * parsePartitionKeyValue('123', 'N'); // Returns 123 as a number
- * parsePartitionKeyValue('true', 'BOOL'); // Returns true as a boolean
- * parsePartitionKeyValue('{"key": "value"}', 'M'); // Returns { key: "value" } as an object
+ * ```ts
+ * parseDynamoKeyValue('123', 'N'); // 123
+ * parseDynamoKeyValue('red, blue', 'SS'); // ['red', 'blue']
+ * parseDynamoKeyValue('{"enabled":true}', 'M'); // { enabled: true }
+ * ```
  */
 export function parseDynamoKeyValue(key: string, keyType: string): unknown {
   switch (keyType) {

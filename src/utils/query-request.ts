@@ -26,6 +26,11 @@ export type ApiGatewayQueryEvent = {
  * Extracts API Gateway query-string parameters and converts them into the
  * schema-free input used by {@link buildValidatedQueryCommand}.
  *
+ * ### Process Flow:
+ * 1. Check whether any query-string parameter has a defined value.
+ * 2. Validate and return the default input when no defined parameter is present.
+ * 3. Otherwise convert and validate the supplied query parameters.
+ *
  * When the event has no query-string parameters, the developer-provided
  * default input is validated with `customQueryCmdInputSch` and returned.
  * An empty parameter object and an object containing only `undefined` values
@@ -38,7 +43,7 @@ export type ApiGatewayQueryEvent = {
  *   parameters are invalid.
  * - This function does not execute a query or inspect whether DynamoDB returned items.
  *
- * Convert event parameters
+ * @example Convert event parameters
  *
  * ```ts
  * const input = getCustomQueryInputFromApiGatewayEvent(
@@ -69,7 +74,7 @@ export type ApiGatewayQueryEvent = {
  * // }
  * ```
  *
- * Use the default when parameters are missing
+ * @example Use the default when parameters are missing
  *
  * ```ts
  * const input = getCustomQueryInputFromApiGatewayEvent(
@@ -259,9 +264,47 @@ export function convertDynamoReadQueryRequestToCustomQueryInput(input: unknown):
   }
 }
 
-/** Short alias for {@link convertDynamoReadQueryRequestToCustomQueryInput}. */
+/**
+ * Provides a short alias for convertDynamoReadQueryRequestToCustomQueryInput.
+ *
+ * ### Process Flow:
+ * 1. Forward the input to the same query-request converter.
+ * 2. Return its validated command input without changing behavior.
+ *
+ * @param input - Raw or previously parsed DynamoDB read-query request.
+ * @returns Validated custom query-command input.
+ * @throws If request parsing, typed-value decoding, or query validation fails.
+ *
+ * @example
+ * ```ts
+ * const input = convertDynamoReadQueryRequest({
+ *   operation: 'QUERY', table: 'Orders',
+ *   pkAttr1Name: 'customerId', pkAttr1Value: 'customer-1',
+ * });
+ * // input.partitionKeys: { customerId: 'customer-1' }
+ * ```
+ */
 export const convertDynamoReadQueryRequest = convertDynamoReadQueryRequestToCustomQueryInput;
 
+/**
+ * Converts a parsed API sort comparator and native values into a query sort condition.
+ *
+ * ### Process Flow:
+ * 1. Return the value directly for equality.
+ * 2. Wrap ordered and prefix comparisons in the matching operator object.
+ * 3. Use both decoded bounds for BETWEEN.
+ *
+ * @param operator - Sort comparator from a validated request.
+ * @param value - Decoded comparison value or lower bound.
+ * @param secondValue - Decoded upper bound; required by the validated BETWEEN request.
+ * @returns A direct equality value or structured sort condition.
+ * @throws If BEGINS_WITH receives a value that is neither a string nor binary.
+ *
+ * @example
+ * ```ts
+ * toSortCondition('GREATER_THAN_OR_EQUAL_TO', 100); // { gte: 100 }
+ * ```
+ */
 function toSortCondition(
   operator: DynamoSortKeyOperator,
   value: QueryKeyValue,
@@ -288,6 +331,25 @@ function toSortCondition(
   }
 }
 
+/**
+ * Formats a validated API filter operator using already allocated expression tokens.
+ *
+ * ### Process Flow:
+ * 1. Select the comparator or function for the supplied operator.
+ * 2. Insert name and value tokens, including a second bound for BETWEEN.
+ * 3. Return the expression fragment without allocating mappings.
+ *
+ * @param nameToken - Allocated attribute-name token.
+ * @param operator - Filter comparator or existence function.
+ * @param valueToken - Allocated value token; omitted for existence checks.
+ * @param secondValueToken - Allocated upper-bound token for BETWEEN.
+ * @returns A filter-expression fragment.
+ *
+ * @example
+ * ```ts
+ * toFilterExpression('#status', 'EQUAL_TO', ':expected'); // '#status = :expected'
+ * ```
+ */
 function toFilterExpression(
   nameToken: string,
   operator: DynamoFilterOperator,
@@ -322,23 +384,79 @@ function toFilterExpression(
   }
 }
 
+/**
+ * Rejects repeated key names across the query’s partition and sort key slots.
+ *
+ * ### Process Flow:
+ * 1. Check the set of names already seen.
+ * 2. Throw for a duplicate; otherwise add the name to the set.
+ *
+ * @param keyNames - Mutable set shared across partition and sort key processing.
+ * @param name - Key attribute name to register.
+ * @returns Nothing; updates keyNames in place.
+ * @throws If the name has already been registered.
+ */
 function assertUniqueKeyName(keyNames: Set<string>, name: string): void {
   if (keyNames.has(name)) throw new Error(`Duplicate query key attribute: "${name}".`);
   keyNames.add(name);
 }
 
+/**
+ * Allocates and stores a collision-safe attribute-name placeholder.
+ *
+ * ### Process Flow:
+ * 1. Prefix the base with # and reserve an available token.
+ * 2. Store the supplied attribute name in the state mapping.
+ * 3. Return the allocated token.
+ *
+ * @param state - Mutable token mappings and occupied-token sets.
+ * @param base - Token base without its prefix.
+ * @param attributeName - Attribute name to alias.
+ * @returns The allocated token; state mappings and occupancy are updated in place.
+ */
 function addNameToken(state: TokenState, base: string, attributeName: string): string {
   const token = allocateToken(state.occupiedNames, `#${base}`);
   state.names[token] = attributeName;
   return token;
 }
 
+/**
+ * Allocates and stores a collision-safe attribute-value placeholder.
+ *
+ * ### Process Flow:
+ * 1. Prefix the base with : and reserve an available token.
+ * 2. Store the supplied native value in the state mapping.
+ * 3. Return the allocated token.
+ *
+ * @param state - Mutable token mappings and occupied-token sets.
+ * @param base - Token base without its prefix.
+ * @param value - Native value to associate with the placeholder.
+ * @returns The allocated token; state mappings and occupancy are updated in place.
+ */
 function addValueToken(state: TokenState, base: string, value: unknown): string {
   const token = allocateToken(state.occupiedValues, `:${base}`);
   state.values[token] = value;
   return token;
 }
 
+/**
+ * Reserves a preferred expression token or a deterministic suffixed alternative.
+ *
+ * ### Process Flow:
+ * 1. Start with the preferred token.
+ * 2. Try numeric suffixes until the token is unoccupied.
+ * 3. Reserve the chosen token and return it.
+ *
+ * @param occupiedTokens - Mutable set of unavailable tokens.
+ * @param preferredToken - Desired token, including its hash or colon prefix.
+ * @returns A token added to occupiedTokens.
+ *
+ * @example
+ * ```ts
+ * const occupied = new Set(['#filter0']);
+ * allocateToken(occupied, '#filter0'); // '#filter0_1'
+ * ```
+ */
 function allocateToken(occupiedTokens: Set<string>, preferredToken: string): string {
   let token = preferredToken;
   let suffix = 1;

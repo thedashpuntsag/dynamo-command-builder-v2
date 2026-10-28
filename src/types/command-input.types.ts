@@ -1,3 +1,6 @@
+import { updateOperationsSch, validateUpdateMode } from './update.types';
+import type { Condition, ConditionRecord } from './condition.types';
+import { conditionSch, conditionRecordSch } from './condition.types';
 import { z } from 'zod';
 import {
   genericRecordSch,
@@ -25,6 +28,30 @@ const oneOrTwoAttributeRecordSch = genericRecordSch.refine(
     message: 'Key must contain exactly 1 or 2 attributes.',
   }
 );
+
+const structuredConditionFields = {
+  condition: conditionSch.optional(),
+  conditions: conditionRecordSch.optional(),
+  conditionJoin: z.enum(['AND', 'OR']).optional(),
+};
+
+type StructuredConditionInput = {
+  condition?: Condition | undefined;
+  conditions?: ConditionRecord | undefined;
+  conditionJoin?: 'AND' | 'OR' | undefined;
+  conditionExpression?: string | undefined;
+};
+
+function validateStructuredCondition(input: StructuredConditionInput, ctx: z.RefinementCtx): void {
+  if (
+    [input.condition, input.conditions, input.conditionExpression].filter((value) => value !== undefined).length > 1
+  ) {
+    ctx.addIssue({ code: 'custom', message: 'Use only one of condition, conditions, or conditionExpression.' });
+  }
+  if (input.conditionJoin !== undefined && input.conditions === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['conditionJoin'], message: 'conditionJoin requires conditions.' });
+  }
+}
 
 type ExpressionMappingInput = {
   conditionExpression?: string | undefined;
@@ -199,6 +226,7 @@ export const customDeleteCmdInputSch = z
   .object({
     tableName: z.string(),
     key: deleteKeySch,
+    ...structuredConditionFields,
     conditionExpression: z.string().trim().min(1).optional(),
     expressionAttributeNames: stringRecordSch.optional(),
     expressionAttributeValues: definedExpressionValuesSch.optional(),
@@ -209,6 +237,7 @@ export const customDeleteCmdInputSch = z
   })
   .strict()
   .superRefine((input, ctx) => {
+    validateStructuredCondition(input, ctx);
     const conditionExpression = input.conditionExpression;
     if (!conditionExpression) {
       if (input.expressionAttributeNames) {
@@ -227,7 +256,7 @@ export const customDeleteCmdInputSch = z
         });
       }
 
-      if (input.returnValuesOnConditionCheckFailure === 'ALL_OLD') {
+      if (input.returnValuesOnConditionCheckFailure === 'ALL_OLD' && !input.condition && !input.conditions) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'ReturnValuesOnConditionCheckFailure requires a conditionExpression.',
@@ -331,6 +360,7 @@ export const customPutCmdInputSch = z
   .object({
     tableName: trimmedRequiredStringSch,
     item: genericRecordSch,
+    ...structuredConditionFields,
     conditionExpression: optStringSch,
     expressionAttributeNames: stringRecordSch.optional(),
     expressionAttributeValues: genericRecordSch.optional(),
@@ -340,7 +370,10 @@ export const customPutCmdInputSch = z
     returnItemCollectionMetrics: returnItemCollectionMetricsOptionsSch.default('NONE'),
   })
   .strict()
-  .superRefine((input, ctx) => validateConditionExpressionMappings(input, ctx));
+  .superRefine((input, ctx) => {
+    validateConditionExpressionMappings(input, ctx);
+    validateStructuredCondition(input, ctx);
+  });
 
 export type CustomPutCmdInput = z.input<typeof customPutCmdInputSch>;
 
@@ -643,51 +676,73 @@ const transactWritePutItemSch = z
     operation: z.literal('PUT'),
     tableName: trimmedRequiredStringSch,
     item: genericRecordSch,
+    ...structuredConditionFields,
     conditionExpression: optStringSch,
     expressionAttributeNames: stringRecordSch.optional(),
     expressionAttributeValues: genericRecordSch.optional(),
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict()
-  .superRefine((input, ctx) => validateConditionExpressionMappings(input, ctx, 'PUT'));
+  .superRefine((input, ctx) => {
+    validateStructuredCondition(input, ctx);
+    validateConditionExpressionMappings(input, ctx, 'PUT');
+  });
 
 const transactWriteUpdateItemSch = z
   .object({
     operation: z.literal('UPDATE'),
     tableName: trimmedRequiredStringSch,
     key: oneOrTwoAttributeRecordSch,
-    updateExpression: z.string().trim().min(1),
-    conditionExpression: optStringSch,
-    expressionAttributeNames: stringRecordSch.optional(),
-    expressionAttributeValues: genericRecordSch.optional(),
-    returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
-  })
-  .strict();
-
-const transactWriteDeleteItemSch = z
-  .object({
-    operation: z.literal('DELETE'),
-    tableName: trimmedRequiredStringSch,
-    key: oneOrTwoAttributeRecordSch,
+    updates: updateOperationsSch.optional(),
+    updateExpression: z.string().trim().min(1).optional(),
+    ...structuredConditionFields,
     conditionExpression: optStringSch,
     expressionAttributeNames: stringRecordSch.optional(),
     expressionAttributeValues: genericRecordSch.optional(),
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
   .strict()
-  .superRefine((input, ctx) => validateConditionExpressionMappings(input, ctx, 'DELETE'));
+  .superRefine((input, ctx) => {
+    validateStructuredCondition(input, ctx);
+    validateUpdateMode(input, ctx);
+  });
+
+const transactWriteDeleteItemSch = z
+  .object({
+    operation: z.literal('DELETE'),
+    tableName: trimmedRequiredStringSch,
+    key: oneOrTwoAttributeRecordSch,
+    ...structuredConditionFields,
+    conditionExpression: optStringSch,
+    expressionAttributeNames: stringRecordSch.optional(),
+    expressionAttributeValues: genericRecordSch.optional(),
+    returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    validateStructuredCondition(input, ctx);
+    validateConditionExpressionMappings(input, ctx, 'DELETE');
+  });
 
 const transactWriteConditionCheckItemSch = z
   .object({
     operation: z.literal('CONDITION_CHECK'),
     tableName: trimmedRequiredStringSch,
     key: oneOrTwoAttributeRecordSch,
-    conditionExpression: z.string().trim().min(1),
+    ...structuredConditionFields,
+    conditionExpression: z.string().trim().min(1).optional(),
     expressionAttributeNames: stringRecordSch.optional(),
     expressionAttributeValues: genericRecordSch.optional(),
     returnValuesOnConditionCheckFailure: returnValuesOnConditionCheckFailureSch,
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    validateStructuredCondition(input, ctx);
+    validateConditionExpressionMappings(input, ctx);
+    if (!input.conditionExpression && !input.condition && !input.conditions) {
+      ctx.addIssue({ code: 'custom', path: ['condition'], message: 'ConditionCheck requires a condition.' });
+    }
+  });
 
 export const customTransactWriteItemSch = z.discriminatedUnion('operation', [
   transactWritePutItemSch,
@@ -840,7 +895,9 @@ export const customUpdateCmdInputSch = z
     tableName: trimmedRequiredStringSch,
     key: updateKeySch,
     item: updateRecordSch.optional(),
+    updates: updateOperationsSch.optional(),
     updateExpression: trimmedRequiredStringSch.optional(),
+    ...structuredConditionFields,
     conditionExpression: trimmedRequiredStringSch.optional(),
     expressionAttributeNames: expressionNamesSch.optional(),
     expressionAttributeValues: expressionValuesSch.optional(),
@@ -853,16 +910,9 @@ export const customUpdateCmdInputSch = z
   })
   .strict()
   .superRefine((input, ctx) => {
+    validateStructuredCondition(input, ctx);
     const hasItem = input.item !== undefined;
-    const hasExpression = input.updateExpression !== undefined;
-
-    if (hasItem === hasExpression) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['item'],
-        message: 'Provide exactly one of item or updateExpression.',
-      });
-    }
+    validateUpdateMode(input, ctx);
 
     if (hasItem && Object.keys(input.item ?? {}).length === 0) {
       ctx.addIssue({

@@ -50,6 +50,31 @@ describe('example field coverage', () => {
   };
   it.each(examples)('documents every $name input field across its compatible presets', (example) => {
     const documented = new Set([...Object.keys(example.input), ...Object.keys(example.allFieldsInput)]);
+    if (example.id === 'put') {
+      expect(example.allFieldsNote).toContain("condition: { attr: 'id', notExists:");
+      const leafExample = {
+        tableName,
+        item: { id: 'playground-condition' },
+        condition: { attr: 'id', notExists: true },
+      };
+      expect(() => buildCommand('put', leafExample, tableName)).not.toThrow();
+      documented.add('condition');
+    }
+    if (example.id === 'update' || example.id === 'delete') {
+      expect(example.allFieldsNote).toContain('conditions:');
+      expect(example.allFieldsNote).toContain('conditionJoin:');
+      const { condition: _condition, ...base } = example.input;
+      const recordExample = { ...base, conditions: { id: { notExists: true } }, conditionJoin: 'OR' };
+      expect(() => buildCommand(example.id, parseInput(stringify(recordExample)), tableName)).not.toThrow();
+      documented.add('conditions');
+      documented.add('conditionJoin');
+    }
+    if (example.id === 'update') {
+      expect(example.allFieldsNote).toContain('item:');
+      const { updates: _updates, ...base } = example.input;
+      expect(() => buildCommand('update', { ...base, item: { status: 'UPDATED' } }, tableName)).not.toThrow();
+      documented.add('item');
+    }
     expect(documented).toEqual(new Set(Object.keys(schemas[example.id].shape)));
   });
   it('documents every nested batch field, including composite keys and both write operation types', () => {
@@ -78,7 +103,16 @@ describe('example field coverage', () => {
     for (const option of customTransactWriteItemSch.options) {
       const operation = write.transactItems.find((entry) => entry.operation === option.shape.operation.value);
       expect(operation).toBeDefined();
-      expect(new Set(Object.keys(operation!))).toEqual(new Set(Object.keys(option.shape)));
+      const seeded = customTransactWriteCmdInputSch.parse(
+        parseInput(stringify(examples.find((example) => example.id === 'transact-write')!.input))
+      );
+      const structured = seeded.transactItems.find((entry) => entry.operation === option.shape.operation.value)!;
+      expect(examples.find((example) => example.id === 'transact-write')!.allFieldsNote).toContain('conditions:');
+      const { condition: _condition, ...base } = structured;
+      const record = { ...base, conditions: { id: { notExists: true } }, conditionJoin: 'OR' };
+      expect(() => buildCommand('transact-write', { transactItems: [record] }, tableName)).not.toThrow();
+      const documented = new Set([...Object.keys(operation!), ...Object.keys(structured), ...Object.keys(record)]);
+      expect(documented).toEqual(new Set(Object.keys(option.shape)));
     }
   });
 });

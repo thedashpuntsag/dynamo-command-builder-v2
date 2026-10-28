@@ -109,6 +109,39 @@ export function getExamples(tableName: string): CommandExample[] {
     ],
     ...writeMetrics,
   };
+  const repeatableCondition = {
+    or: [
+      { attr: 'id', notExists: true },
+      { attr: 'id', beginsWith: 'playground-' },
+    ],
+  };
+  const structuredWriteCondition = { condition: repeatableCondition, returnValuesOnConditionCheckFailure: 'ALL_OLD' };
+  const structuredTransactionInput = {
+    ...transactWriteInput,
+    transactItems: [
+      { operation: 'PUT', tableName, item: { ...item, id: 'playground-transaction' }, ...structuredWriteCondition },
+      {
+        operation: 'UPDATE',
+        tableName,
+        key: { id: 'playground-transaction-update' },
+        updates: [
+          { attr: 'status', set: 'UPDATED' },
+          { attr: 'attempts', add: 1 },
+          { attr: 'obsolete', remove: true },
+          { attr: 'tags', delete: { $set: ['old'] } },
+        ],
+        ...structuredWriteCondition,
+      },
+      { operation: 'DELETE', tableName, key: { id: 'playground-transaction-old' }, ...structuredWriteCondition },
+      {
+        operation: 'CONDITION_CHECK',
+        tableName,
+        key,
+        condition: { attr: 'status', eq: 'READY' },
+        returnValuesOnConditionCheckFailure: 'ALL_OLD',
+      },
+    ],
+  };
   const definitions: Omit<CommandExample, 'allFieldsInput' | 'allFieldsNote'>[] = [
     {
       id: 'get',
@@ -152,7 +185,14 @@ export function getExamples(tableName: string): CommandExample[] {
       description: 'Create or replace an item, including sets and binary data.',
       builder: 'buildValidatedPutCommand',
       writes: true,
-      input: { tableName, item, ...writeCondition, returnValues: 'ALL_OLD', ...writeMetrics },
+      input: {
+        tableName,
+        item,
+        conditions: { id: { notExists: true }, source: { ne: 'protected' } },
+        conditionJoin: 'OR',
+        returnValues: 'ALL_OLD',
+        ...writeMetrics,
+      },
     },
     {
       id: 'update',
@@ -161,7 +201,32 @@ export function getExamples(tableName: string): CommandExample[] {
       description: 'Build an update expression from an object patch.',
       builder: 'buildValidatedUpdateCommand',
       writes: true,
-      input: updateInput,
+      input: {
+        tableName,
+        key: updateInput.key,
+        updates: [
+          { attr: 'status', set: 'UPDATED' },
+          { attr: 'message', set: 'Updated in the playground' },
+          { attr: 'details', set: { active: false, score: 42 } },
+          { attr: 'attempts', add: 1 },
+          { attr: 'obsolete', remove: true },
+          { attr: 'tags', delete: { $set: ['old'] } },
+        ],
+        condition: {
+          and: [
+            repeatableCondition,
+            {
+              or: [
+                { attr: 'source', notExists: true },
+                { attr: 'source', ne: 'protected' },
+              ],
+            },
+          ],
+        },
+        returnValues: 'ALL_NEW',
+        returnValuesOnConditionCheckFailure: 'ALL_OLD',
+        ...writeMetrics,
+      },
     },
     {
       id: 'delete',
@@ -170,7 +235,13 @@ export function getExamples(tableName: string): CommandExample[] {
       description: 'Delete an item and inspect its previous attributes.',
       builder: 'buildValidatedDeleteCommandInput',
       writes: true,
-      input: { tableName, key: { id: 'playground-item' }, ...writeCondition, returnValues: 'ALL_OLD', ...writeMetrics },
+      input: {
+        tableName,
+        key: { id: 'playground-item' },
+        ...structuredWriteCondition,
+        returnValues: 'ALL_OLD',
+        ...writeMetrics,
+      },
     },
     {
       id: 'batch-get',
@@ -224,13 +295,15 @@ export function getExamples(tableName: string): CommandExample[] {
       description: 'Write items and check conditions in an atomic transaction.',
       builder: 'buildValidatedTransactWriteCommand',
       writes: true,
-      input: transactWriteInput,
+      input: structuredTransactionInput,
     },
   ];
 
   // Reference presets cover schema-dependent fields without breaking the seeded presets.
   const { item: _patch, ...updateExpressionInput } = updateInput;
   const allFields: Partial<Record<CommandId, Record<string, unknown>>> = {
+    delete: { tableName, key: { id: 'playground-item' }, ...writeCondition, returnValues: 'ALL_OLD', ...writeMetrics },
+    put: { tableName, item, ...writeCondition, returnValues: 'ALL_OLD', ...writeMetrics },
     query: {
       ...queryInput,
       indexName: 'status-createdAt-index',
@@ -273,16 +346,19 @@ export function getExamples(tableName: string): CommandExample[] {
     },
   };
   const notes: Partial<Record<CommandId, string>> = {
+    put: "Seeded table demonstrates conditions with conditionJoin. This reference uses raw conditionExpression and expression maps. Alternatively use condition: { attr: 'id', notExists: true } for a nested conditions; condition, conditions, and conditionExpression are mutually exclusive. Conditions check the existing item before replacement.",
     get: 'All fields are included. attributes and projectionExpression are merged; keep their paths distinct to avoid overlapping projections.',
     query:
       'All fields are included. This example queries the seeded status-createdAt-index (status partition key, numeric createdAt sort key). Run the seed again to add the index to an existing table. The example starts after local-test-001; replace exclusiveStartKey with a real LastEvaluatedKey when paginating. GSI reads require consistentRead: false, and filters must not target the index keys.',
     scan: 'All fields are included. This example scans the seeded status-createdAt-index. Run the seed again to add it to an existing table. Replace exclusiveStartKey with the previous page’s LastEvaluatedKey. GSI reads require consistentRead: false; segment and totalSegments must be supplied together.',
+    delete:
+      "Seeded table demonstrates condition: { attr: 'id', notExists: true } inside an OR group. This reference uses raw expressions. Alternatively use conditions: { id: { notExists: true } }, conditionJoin: 'OR'. Choose one condition mode.",
     update:
-      'All expression-mode fields are included. item and updateExpression are mutually exclusive: this preset uses updateExpression; Seeded table demonstrates item. The extraExpAttributeNames and extraExpAttributeValues fields are legacy aliases merged with the main expression maps.',
+      "Seeded table demonstrates condition with nested attribute leaves. Alternatively use conditions: { id: { notExists: true } }, conditionJoin: 'OR'. All expression-mode fields are included. Choose exactly one of updates, item, and updateExpression: this reference uses updateExpression; Seeded table demonstrates updates. For a simple SET patch, use item: { status: 'UPDATED' } instead of updates. The extraExpAttributeNames and extraExpAttributeValues fields are legacy aliases merged with the main expression maps.",
     'batch-write':
       'All fields are included, including keySchema.sortKey and both PUT and DELETE operations. This reference requires a table whose key is id + version; the seeded table only has id. Use Build only or choose Seeded table to run locally.',
     'transact-write':
-      'All fields and all four operation types are included. Use a new clientRequestToken whenever you change the request; reusing a token with a different request can fail for 10 minutes. Transaction operations must target distinct items.',
+      "Seeded table demonstrates condition in all four operation types and updates for transactional UPDATE. Alternatively use conditions: { id: { notExists: true } }, conditionJoin: 'OR' on an operation. All raw-expression fields and all four operation types are included. Use a new clientRequestToken whenever you change the request; reusing a token with a different request can fail for 10 minutes. Transaction operations must target distinct items.",
   };
   return definitions.map((command) => ({
     ...command,

@@ -135,6 +135,9 @@ To serve the built playground with its local API, stop the development server an
 
 - [Local testing and playground guide](./docs/local-test.md)
 - [Playground project layout](./test/playground/README.md)
+- [Structured update operations](./docs/update-command.md)
+- [Write conditions: Update, Delete, and transactions](./docs/write-conditions.md)
+- [Put conditions](./docs/put-command.md)
 - [Query command](./docs/query-command.md)
 - [Structured condition expression design](./docs/condition-expression-design.md)
 - [DynamoDB packages for TypeScript](./docs/dynamo-packages-for-typescript.md)

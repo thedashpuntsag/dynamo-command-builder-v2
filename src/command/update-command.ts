@@ -1,3 +1,5 @@
+import { compileUpdateExpression } from '../utils/update-expression';
+import { compileStructuredCondition } from '../utils/condition-expression';
 import { CustomUpdateCmdInput, customUpdateCmdInputSch } from '@/types';
 import type { UpdateCommandInput } from '@aws-sdk/lib-dynamodb';
 
@@ -7,7 +9,7 @@ import type { UpdateCommandInput } from '@aws-sdk/lib-dynamodb';
  * ### Process Flow:
  * 1. Validate input using the update-command Zod schema.
  * 2. Merge caller-provided names and values, rejecting conflicts.
- * 3. Use an explicit update expression or generate a SET expression.
+ * 3. Compile structured operations, use an explicit expression, or generate an item SET patch.
  * 4. Generate collision-safe aliases for item-based updates.
  * 5. Resolve expression-name tokens, giving explicit mappings precedence.
  * 6. Validate missing and unused expression tokens.
@@ -16,7 +18,8 @@ import type { UpdateCommandInput } from '@aws-sdk/lib-dynamodb';
  * ### Notes:
  * - Uses native JavaScript values with `@aws-sdk/lib-dynamodb`.
  * - Generated updates treat item property names as literal attributes.
- * - Explicit expressions support DynamoDB SET, REMOVE, ADD, and DELETE.
+ * - Structured updates support SET, REMOVE, ADD, DELETE, and common SET functions.
+ * - Explicit expressions remain available for compatibility.
  * - Explicit alias mappings override inferred shorthand mappings.
  * - Legacy extra expression maps are retained for compatibility.
  * - The builder does not execute AWS operations.
@@ -103,7 +106,34 @@ export function buildValidatedUpdateCommand(input: CustomUpdateCmdInput): Update
       updateExpression = `SET ${updateParts.join(', ')}`;
     }
 
-    const expressions = [updateExpression, parsed.conditionExpression ?? ''].join(' ');
+    if (parsed.updates !== undefined) {
+      const compiledUpdate = compileUpdateExpression(parsed.updates, {
+        occupiedNameTokens: [
+          ...Object.keys(providedNames),
+          ...getTokens(parsed.conditionExpression ?? '', /#[A-Za-z0-9_]+/g),
+        ],
+        occupiedValueTokens: [
+          ...Object.keys(values),
+          ...getTokens(parsed.conditionExpression ?? '', /:[A-Za-z0-9_]+/g),
+        ],
+      });
+      updateExpression = compiledUpdate.expression;
+      Object.assign(generatedNames, compiledUpdate.expressionAttributeNames);
+      Object.assign(values, compiledUpdate.expressionAttributeValues);
+    }
+
+    const compiled = compileStructuredCondition(parsed, {
+      occupiedNameTokens: [
+        ...Object.keys(providedNames),
+        ...Object.keys(generatedNames),
+        ...getTokens(updateExpression, /#[A-Za-z0-9_]+/g),
+      ],
+      occupiedValueTokens: [...Object.keys(values), ...getTokens(updateExpression, /:[A-Za-z0-9_]+/g)],
+    });
+    const conditionExpression = compiled?.expression ?? parsed.conditionExpression;
+    Object.assign(generatedNames, compiled?.expressionAttributeNames);
+    Object.assign(values, compiled?.expressionAttributeValues);
+    const expressions = [updateExpression, conditionExpression ?? ''].join(' ');
 
     const referencedNames = getTokens(expressions, /#[A-Za-z0-9_]+/g);
 
@@ -151,8 +181,8 @@ export function buildValidatedUpdateCommand(input: CustomUpdateCmdInput): Update
       ReturnItemCollectionMetrics: parsed.returnItemCollectionMetrics,
     };
 
-    if (parsed.conditionExpression) {
-      commandInput.ConditionExpression = parsed.conditionExpression;
+    if (conditionExpression) {
+      commandInput.ConditionExpression = conditionExpression;
     }
 
     if (Object.keys(names).length > 0) {

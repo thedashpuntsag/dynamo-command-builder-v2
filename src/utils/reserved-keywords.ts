@@ -559,20 +559,46 @@ export const RESERVED_KEYWORDS_SET = new Set([
 const UPDATE_RESERVED_REGEX = new RegExp(`\\b(?:${[...RESERVED_KEYWORDS_SET].join('|')})\\b(?=\\s*=)`, 'gi');
 
 /**
- * Replaces DynamoDB reserved keywords in an update expression with attribute aliases.
+ * Prefixes reserved words immediately before an equals sign with an attribute-name hash.
  *
- * @param updateExpression - The DynamoDB update expression.
- * @returns The update expression with reserved keywords replaced by attribute aliases.
+ * ### Process Flow:
+ * 1. Match reserved words case-insensitively when followed by optional whitespace and an equals sign.
+ * 2. Prefix each match with a hash while retaining its original casing.
+ * 3. Return the rewritten expression.
+ *
+ * This is a lexical rewrite, not a full expression parser; it does not check whether a match is already prefixed.
+ *
+ * @param updateExpression - Update expression containing assignment targets to rewrite.
+ * @returns Expression text with matching words prefixed; expression mappings are not generated.
+ *
+ * @example
+ * ```ts
+ * replaceReservedKeywordsFromUpdateExp('SET size = :size');
+ * // 'SET #size = :size'
+ * ```
  */
 export function replaceReservedKeywordsFromUpdateExp(updateExpression: string): string {
   return updateExpression.replace(UPDATE_RESERVED_REGEX, (match) => `#${match}`);
 }
 
 /**
- * Replaces DynamoDB reserved keywords in a projection expression with attribute aliases.
- * Example:
- *  size, color, status
- *  → #size, color, #status
+ * Aliases reserved attribute segments in comma-separated projection paths.
+ *
+ * ### Process Flow:
+ * 1. Split projection entries on commas and trim each entry.
+ * 2. Inspect unaliased top-level and dotted attribute segments against the reserved-word set.
+ * 3. Prefix reserved segments and rejoin entries with comma-space separators.
+ *
+ * The caller remains responsible for providing the corresponding ExpressionAttributeNames mappings.
+ *
+ * @param projection - Projection expression with optional nested paths and list indexes.
+ * @returns The rewritten projection expression; existing hash-prefixed segments are preserved.
+ *
+ * @example
+ * ```ts
+ * replaceReservedKeywordsFromProjection('size, profile.status');
+ * // '#size, profile.#status'
+ * ```
  */
 export function replaceReservedKeywordsFromProjection(projection: string): string {
   return projection

@@ -1,5 +1,6 @@
 import { CustomPutCmdInput, customPutCmdInputSch } from '@/types';
 import { extractExpAttributeNamesFromExpression } from '@/utils';
+import { compileStructuredCondition } from '../utils/condition-expression';
 import type { PutCommandInput } from '@aws-sdk/lib-dynamodb';
 
 /**
@@ -16,6 +17,8 @@ import type { PutCommandInput } from '@aws-sdk/lib-dynamodb';
  * 8. Return the validated `PutCommandInput`.
  *
  * ### Notes:
+ * - Structured `conditions` (record) or `condition` (attribute leaves and logical groups) generate aliases and values automatically.
+ * - Structured and raw expressions are mutually exclusive.
  * - Uses native JavaScript values through `@aws-sdk/lib-dynamodb`.
  * - Caller-provided aliases override automatically generated mappings.
  * - Unused expression attribute names and values are silently omitted.
@@ -60,6 +63,16 @@ export function buildValidatedPutCommand(input: CustomPutCmdInput): PutCommandIn
       ReturnItemCollectionMetrics: parsed.returnItemCollectionMetrics,
       ReturnValuesOnConditionCheckFailure: parsed.returnValuesOnConditionCheckFailure,
     };
+
+    const compiled = compileStructuredCondition(parsed);
+    if (compiled !== undefined) {
+      commandInput.ConditionExpression = compiled.expression;
+      commandInput.ExpressionAttributeNames = compiled.expressionAttributeNames;
+      if (Object.keys(compiled.expressionAttributeValues).length > 0) {
+        commandInput.ExpressionAttributeValues = compiled.expressionAttributeValues;
+      }
+      return commandInput;
+    }
 
     if (!parsed.conditionExpression) {
       return commandInput;

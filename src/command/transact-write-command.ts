@@ -1,3 +1,5 @@
+import { compileUpdateExpression } from '../utils/update-expression';
+import { compileStructuredCondition } from '../utils/condition-expression';
 import { CustomTransactWriteCmdInput, customTransactWriteCmdInputSch } from '@/types';
 import { extractExpAttributeNamesFromExpression } from '@/utils';
 import { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
@@ -17,7 +19,7 @@ import { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
  *
  * ### Supported Operations:
  * - `PUT` creates or replaces an item.
- * - `UPDATE` modifies an existing item using an update expression.
+ * - `UPDATE` modifies an item using structured updates or an update expression.
  * - `DELETE` deletes an item by its primary key.
  * - `CONDITION_CHECK` validates an item without modifying it.
  *
@@ -54,7 +56,53 @@ export function buildValidatedTransactWriteCommand(input: CustomTransactWriteCmd
     const parsed = customTransactWriteCmdInputSch.parse(input);
 
     const commandInput: TransactWriteCommandInput = {
-      TransactItems: parsed.transactItems.map((transactItem) => {
+      TransactItems: parsed.transactItems.map((original) => {
+        const structuredUpdate =
+          original.operation === 'UPDATE' && original.updates !== undefined
+            ? compileUpdateExpression(original.updates, {
+                occupiedNameTokens: [
+                  ...Object.keys(original.expressionAttributeNames ?? {}),
+                  ...(original.conditionExpression?.match(/#[A-Za-z0-9_]+/g) ?? []),
+                ],
+                occupiedValueTokens: [
+                  ...Object.keys(original.expressionAttributeValues ?? {}),
+                  ...(original.conditionExpression?.match(/:[A-Za-z0-9_]+/g) ?? []),
+                ],
+              })
+            : undefined;
+        const item = structuredUpdate
+          ? {
+              ...original,
+              updateExpression: structuredUpdate.expression,
+              expressionAttributeNames: {
+                ...original.expressionAttributeNames,
+                ...structuredUpdate.expressionAttributeNames,
+              },
+              expressionAttributeValues: {
+                ...original.expressionAttributeValues,
+                ...structuredUpdate.expressionAttributeValues,
+              },
+            }
+          : original;
+        const updateExpression = item.operation === 'UPDATE' ? (item.updateExpression ?? '') : '';
+        const compiled = compileStructuredCondition(item, {
+          occupiedNameTokens: [
+            ...Object.keys(item.expressionAttributeNames ?? {}),
+            ...(updateExpression.match(/#[A-Za-z0-9_]+/g) ?? []),
+          ],
+          occupiedValueTokens: [
+            ...Object.keys(item.expressionAttributeValues ?? {}),
+            ...(updateExpression.match(/:[A-Za-z0-9_]+/g) ?? []),
+          ],
+        });
+        const transactItem = compiled
+          ? {
+              ...item,
+              conditionExpression: compiled.expression,
+              expressionAttributeNames: { ...item.expressionAttributeNames, ...compiled.expressionAttributeNames },
+              expressionAttributeValues: { ...item.expressionAttributeValues, ...compiled.expressionAttributeValues },
+            }
+          : item;
         switch (transactItem.operation) {
           case 'PUT': {
             const generatedExpressionAttributeNames = transactItem.conditionExpression
@@ -105,7 +153,7 @@ export function buildValidatedTransactWriteCommand(input: CustomTransactWriteCmd
               : {};
 
             const updateExpressionAttributeNames = extractExpAttributeNamesFromExpression(
-              transactItem.updateExpression
+              transactItem.updateExpression ?? ''
             );
 
             const expressionAttributeNames = {
@@ -118,7 +166,7 @@ export function buildValidatedTransactWriteCommand(input: CustomTransactWriteCmd
               Update: {
                 TableName: transactItem.tableName,
                 Key: transactItem.key,
-                UpdateExpression: transactItem.updateExpression,
+                UpdateExpression: transactItem.updateExpression ?? '',
 
                 ...(transactItem.conditionExpression
                   ? {
@@ -193,7 +241,7 @@ export function buildValidatedTransactWriteCommand(input: CustomTransactWriteCmd
 
           case 'CONDITION_CHECK': {
             const generatedExpressionAttributeNames = extractExpAttributeNamesFromExpression(
-              transactItem.conditionExpression
+              transactItem.conditionExpression ?? ''
             );
 
             const expressionAttributeNames = {
@@ -205,7 +253,7 @@ export function buildValidatedTransactWriteCommand(input: CustomTransactWriteCmd
               ConditionCheck: {
                 TableName: transactItem.tableName,
                 Key: transactItem.key,
-                ConditionExpression: transactItem.conditionExpression,
+                ConditionExpression: transactItem.conditionExpression ?? '',
 
                 ...(Object.keys(expressionAttributeNames).length > 0
                   ? {
