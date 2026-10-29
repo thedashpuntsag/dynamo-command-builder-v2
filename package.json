@@ -1,7 +1,7 @@
 {
   "name": "dynamo-craft",
-  "version": "0.0.0",
-  "description": "A dynamo command builder wrapper for AWS DynamoDB SDK v3., written in TypeScript.",
+  "version": "0.1.1",
+  "description": "Type-safe command builders for the AWS SDK for JavaScript v3 DynamoDB DocumentClient.",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
@@ -48,7 +48,9 @@
     "lint:fix": "vp lint . --fix",
     "typecheck": "tsc --noEmit",
     "check": "pnpm run format && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build",
-    "publish:dry": "pnpm pack --dry-run",
+    "check:release": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build",
+    "publish:dry": "pnpm run check:release && pnpm publish --dry-run --no-git-checks --access public",
+    "publish:release": "pnpm whoami && pnpm run check:release && pnpm publish --access public",
     "prepare": "husky"
   },
   "keywords": [
@@ -63,12 +65,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thedashpuntsag/dynamo-command-builder-v2.git"
+    "url": "git+https://github.com/thedashpuntsag/dynamo-craft.git"
   },
   "bugs": {
-    "url": "https://github.com/thedashpuntsag/dynamo-command-builder-v2/issues"
+    "url": "https://github.com/thedashpuntsag/dynamo-craft/issues"
   },
-  "homepage": "https://github.com/thedashpuntsag/dynamo-command-builder-v2#readme",
+  "homepage": "https://github.com/thedashpuntsag/dynamo-craft#readme",
   "packageManager": "pnpm@12.3.4",
   "engines": {
     "node": ">=20.0.0"
