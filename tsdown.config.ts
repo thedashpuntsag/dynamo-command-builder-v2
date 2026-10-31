@@ -11,9 +11,6 @@ export default defineConfig({
   outDir: 'dist',
   target: 'es2020',
   deps: {
-    // tsdown <0.23 compatibility: resolve external dependency subpaths.
-    // Remove to preserve subpath imports as written (the new default).
-    // https://tsdown.dev/options/dependencies#deps-resolvedepsubpath
     resolveDepSubpath: true,
     neverBundle: ['@aws-sdk/client-dynamodb', '@aws-sdk/lib-dynamodb'],
   },
